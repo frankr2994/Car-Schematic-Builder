@@ -39,6 +39,10 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+/.coverage
+/.cache
+/dist/
+
 # BEGIN ANTIGRAVITY ORCHESTRA
 # Local agent state and raw execution records
 /.orchestra/
@@ -53,7 +57,12 @@ next-env.d.ts
 /*screenshot*.png
 /*screenshot*.jpg
 /*capture*.png
-# END ANTIGRAVITY ORCHESTRA
+
+# Tool output
+/coverage/
 /.coverage
-/.cache
+/.cache/
+/node_modules/
 /dist/
+/build/
+# END ANTIGRAVITY ORCHESTRA
