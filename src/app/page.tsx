@@ -4,32 +4,18 @@ import WiringDiagram from "../components/WiringDiagram";
 import { ProjectDocument } from "../domain/types";
 import { compileTemplate } from "../compiler/compiler";
 import { templates } from "../catalog/components";
-import { isValidProject } from "../domain/validation";
+import { storage } from "../storage/storage";
 
 export default function Home() {
   const [project, setProject] = useState<ProjectDocument | null>(null);
 
   useEffect(() => {
     const init = async () => {
-      let initialProject: ProjectDocument | null = null;
-      try {
-        const saved = localStorage.getItem("wiring_project");
-        if (saved) {
-          const parsed = JSON.parse(saved);
-          if (isValidProject(parsed)) {
-            initialProject = parsed;
-          } else {
-            throw new Error("Invalid schema or unknown component kind");
-          }
-        }
-      } catch (e) {
-        console.warn("Failed to load saved project, falling back to default.", e);
-      }
-      
+      let initialProject = storage.load();
       if (!initialProject) {
         initialProject = compileTemplate(templates[0]);
+        storage.save(initialProject);
       }
-      
       setProject(initialProject);
     };
     init();
@@ -37,13 +23,13 @@ export default function Home() {
 
   const handleProjectChange = (updatedProject: ProjectDocument) => {
     setProject(updatedProject);
-    localStorage.setItem("wiring_project", JSON.stringify(updatedProject));
+    storage.save(updatedProject);
   };
 
   const handleReset = () => {
     const initialProject = compileTemplate(templates[0]);
     setProject(initialProject);
-    localStorage.setItem("wiring_project", JSON.stringify(initialProject));
+    storage.save(initialProject);
   };
 
   if (!project) return <div>Loading...</div>;
@@ -73,7 +59,6 @@ export default function Home() {
       
       <main className="flex-1 w-full h-full relative p-4 print:p-0">
         <div className="absolute inset-4 print:inset-0 bg-white border-2 border-black print:border-none shadow-inner print:shadow-none">
-          {/* Title block for printing */}
           <div className="hidden print:block absolute bottom-4 right-4 border-2 border-black bg-white z-10 w-64 text-xs font-mono">
             <div className="border-b-2 border-black p-2 bg-gray-100 font-bold text-center">WIRING SCHEMATIC</div>
             <div className="p-2">

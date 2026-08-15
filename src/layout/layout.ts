@@ -10,9 +10,9 @@ export async function layoutProject(project: ProjectDocument) {
     layoutOptions: {
       "elk.algorithm": "layered",
       "elk.direction": "RIGHT",
-      "elk.edgeRouting": "ORTHOGONAL",
       "elk.spacing.nodeNode": "50",
-      "elk.layered.spacing.nodeNodeBetweenLayers": "50"
+      "elk.layered.spacing.nodeNodeBetweenLayers": "50",
+      "elk.portConstraints": "FIXED_SIDE" // Enforce port side constraints
     },
     children: project.instances.map(inst => {
       const def = catalog[inst.kind];
@@ -25,8 +25,8 @@ export async function layoutProject(project: ProjectDocument) {
           id: `${inst.id}_${t.key}`,
           width: 10,
           height: 10,
-          properties: {
-            side: t.roles.includes("powerSource") || t.roles.includes("switchedPowerOutput") || t.roles.includes("protectedPowerInput") && t.key === "out" ? "EAST" : "WEST"
+          layoutOptions: {
+            "elk.port.side": t.direction === "source" ? "EAST" : "WEST"
           }
         }))
       };
@@ -38,6 +38,7 @@ export async function layoutProject(project: ProjectDocument) {
     }))
   };
 
-  const layoutedGraph = await elk.layout(graph);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const layoutedGraph = await elk.layout(graph as any);
   return layoutedGraph;
 }
