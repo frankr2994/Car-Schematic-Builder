@@ -6,6 +6,7 @@ import {
   WiringLayoutResult,
   WireDiagnostics,
   WIRING_THEME,
+  toggleWireDiagnostic,
 } from "../wiring";
 
 describe("Wiring Diagnostics & Fault Overlays", () => {
@@ -69,5 +70,22 @@ describe("Wiring Diagnostics & Fault Overlays", () => {
 
     expect(edge?.data.readOnly).toBe(true);
     expect(edge?.data.onToggleDiagnostic).toBeUndefined();
+  });
+
+  it("retains label, notes, and custom fields when toggling diagnostic state", () => {
+    const initialDiag: WireDiagnostics = {
+      [firstWireId]: {
+        continuity: "normal",
+        label: "Instrument Cluster Illumination",
+        notes: "Dimmer circuit rheostat tap",
+      },
+    };
+
+    const updated = toggleWireDiagnostic(initialDiag, firstWireId);
+    expect(updated).toEqual({
+      continuity: "open",
+      label: "Instrument Cluster Illumination",
+      notes: "Dimmer circuit rheostat tap",
+    });
   });
 });
