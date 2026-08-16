@@ -1,18 +1,24 @@
 import { z } from "zod";
 import { ProjectDocument } from "./types";
 import { catalog } from "../catalog/components";
+import { areRolesCompatible, isDeadShort } from "./connectionRules";
 
 export const LayoutOverrideSchema = z.object({
   x: z.number(),
   y: z.number(),
-  locked: z.boolean()
+  locked: z.boolean(),
 });
 
 export const ComponentInstanceSchema = z.object({
   id: z.string().min(1),
   kind: z.string().min(1),
   name: z.string().min(1),
-  zone: z.string().min(1)
+  zone: z.string().min(1),
+});
+
+export const TerminalRefSchema = z.object({
+  instanceId: z.string().min(1),
+  terminalKey: z.string().min(1),
 });
 
 export const WireSchema = z.object({
@@ -21,17 +27,25 @@ export const WireSchema = z.object({
   sourcePort: z.string().min(1),
   targetInstance: z.string().min(1),
   targetPort: z.string().min(1),
+  a: TerminalRefSchema.optional(),
+  b: TerminalRefSchema.optional(),
   color: z.string().optional(),
-  gauge: z.string().optional()
+  colorCode: z.string().optional(),
+  gauge: z.string().optional(),
+  gaugeAwg: z.number().optional(),
+  label: z.string().optional(),
+  notes: z.string().optional(),
+  lengthMm: z.number().optional(),
+  routeOverride: z.array(z.object({ x: z.number(), y: z.number() })).optional(),
 });
 
 export const ProjectDocumentSchema = z.object({
   id: z.string().min(1),
-  schemaVersion: z.literal("1.0"),
+  schemaVersion: z.enum(["1.0", "2.0"]),
   ruleSetVersion: z.string(),
   instances: z.array(ComponentInstanceSchema),
   wires: z.array(WireSchema),
-  layoutOverrides: z.record(z.string(), LayoutOverrideSchema)
+  layoutOverrides: z.record(z.string(), LayoutOverrideSchema),
 }).superRefine((data, ctx) => {
   const instanceIds = new Set<string>();
   for (const inst of data.instances) {
@@ -51,8 +65,8 @@ export const ProjectDocumentSchema = z.object({
     }
     wireIds.add(wire.id);
 
-    const sourceInst = data.instances.find(i => i.id === wire.sourceInstance);
-    const targetInst = data.instances.find(i => i.id === wire.targetInstance);
+    const sourceInst = data.instances.find((i) => i.id === wire.sourceInstance);
+    const targetInst = data.instances.find((i) => i.id === wire.targetInstance);
 
     if (!sourceInst) {
       ctx.addIssue({ code: z.ZodIssueCode.custom, message: `Wire source instance not found: ${wire.sourceInstance}` });
@@ -66,8 +80,8 @@ export const ProjectDocumentSchema = z.object({
     const sourceCat = catalog[sourceInst.kind];
     const targetCat = catalog[targetInst.kind];
 
-    const sourcePortDef = sourceCat?.terminals.find(t => t.key === wire.sourcePort);
-    const targetPortDef = targetCat?.terminals.find(t => t.key === wire.targetPort);
+    const sourcePortDef = sourceCat?.terminals.find((t) => t.key === wire.sourcePort);
+    const targetPortDef = targetCat?.terminals.find((t) => t.key === wire.targetPort);
 
     if (!sourcePortDef) {
       ctx.addIssue({ code: z.ZodIssueCode.custom, message: `Wire source port not found: ${wire.sourcePort}` });
@@ -82,8 +96,13 @@ export const ProjectDocumentSchema = z.object({
     }
 
     if (sourcePortDef && targetPortDef) {
-      const sharedRole = sourcePortDef.roles.some(r => targetPortDef.roles.includes(r));
-      if (!sharedRole) {
+      const isDead = isDeadShort(sourcePortDef.roles, targetPortDef.roles);
+      if (isDead) {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, message: `Short circuit detected between ${wire.sourcePort} and ${wire.targetPort}` });
+      }
+
+      const isCompatible = areRolesCompatible(sourcePortDef.roles, targetPortDef.roles);
+      if (!isCompatible) {
         ctx.addIssue({ code: z.ZodIssueCode.custom, message: `Roles do not intersect between ${wire.sourcePort} and ${wire.targetPort}` });
       }
     }
@@ -96,7 +115,7 @@ export const ProjectDocumentSchema = z.object({
   }
 });
 
-export type ValidationResult = 
+export type ValidationResult =
   | { success: true; data: ProjectDocument }
   | { success: false; errors: z.ZodIssue[] };
 

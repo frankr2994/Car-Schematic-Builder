@@ -73,16 +73,19 @@ export function buildWiringViewModel(
   const edges: WiringEdgeViewModel[] = project.wires.map((wire) => {
     const diagnostic: WireDiagnostic = diagnostics[wire.id] || {
       continuity: "normal",
+      label: wire.label,
+      notes: wire.notes,
     };
 
     const isFault = diagnostic.continuity === "open";
     const isUnknown = diagnostic.continuity === "unknown";
 
+    const wireColor = wire.color || wire.colorCode || WIRING_THEME.colors.defaultWire;
     const strokeColor = isFault
       ? WIRING_THEME.colors.diagnostics.open
       : isUnknown
       ? WIRING_THEME.colors.diagnostics.unknown
-      : wire.color || WIRING_THEME.colors.defaultWire;
+      : wireColor;
 
     const strokeDasharray =
       diagnostic.continuity === "open"
@@ -104,8 +107,12 @@ export function buildWiringViewModel(
         sourcePort: wire.sourcePort,
         targetInstance: wire.targetInstance,
         targetPort: wire.targetPort,
-        wireColor: wire.color || WIRING_THEME.colors.defaultWire,
+        wireColor,
+        colorCode: wire.colorCode || wireColor,
         gauge: wire.gauge,
+        gaugeAwg: wire.gaugeAwg,
+        label: wire.label,
+        notes: wire.notes,
         diagnostic,
         onToggleDiagnostic,
         readOnly: !onToggleDiagnostic,

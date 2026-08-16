@@ -1,5 +1,5 @@
 import { PortDefinition } from "../catalog/components";
-import { ProjectDocument } from "../domain/types";
+import { ProjectDocument, WorkspaceSelection } from "../domain/types";
 
 export type ContinuityState = "unknown" | "normal" | "open";
 
@@ -24,6 +24,7 @@ export interface WiringNodeViewModel {
   type: "component";
   position: { x: number; y: number };
   data: WiringNodeData;
+  selected?: boolean;
 }
 
 export interface WiringEdgeData extends Record<string, unknown> {
@@ -33,7 +34,11 @@ export interface WiringEdgeData extends Record<string, unknown> {
   targetInstance: string;
   targetPort: string;
   wireColor?: string;
+  colorCode?: string;
   gauge?: string;
+  gaugeAwg?: number;
+  label?: string;
+  notes?: string;
   diagnostic: WireDiagnostic;
   onToggleDiagnostic?: (wireId: string) => void;
   readOnly?: boolean;
@@ -47,6 +52,7 @@ export interface WiringEdgeViewModel {
   targetHandle: string;
   type: "diagnostic" | "smoothstep";
   data: WiringEdgeData;
+  selected?: boolean;
   style?: React.CSSProperties;
 }
 
@@ -59,6 +65,8 @@ export interface BaseWiringDiagramProps {
   project: ProjectDocument;
   onProjectChange: (project: ProjectDocument) => void;
   readOnly?: boolean;
+  selectedElement?: WorkspaceSelection;
+  onSelectionChange?: (selection: WorkspaceSelection) => void;
 }
 
 export type WiringDiagramProps = BaseWiringDiagramProps & {

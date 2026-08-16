@@ -1,5 +1,6 @@
 import { ProjectDocument } from "../domain/types";
 import { parseProject } from "../domain/validation";
+import { migrateProject } from "../domain/migrations";
 
 const STORAGE_KEY = "wiring_project";
 
@@ -10,19 +11,27 @@ export const storage = {
       if (!saved) return null;
       
       const parsed = JSON.parse(saved);
-      const validation = parseProject(parsed);
       
+      // Attempt direct parse first
+      const validation = parseProject(parsed);
       if (validation.success) {
         return validation.data;
       }
       
       console.warn("Invalid storage data, attempting to repair...", validation.errors);
       
-      // Simple repair strategy: if it has instances and wires but failed validation
-      // we could try to filter out invalid ones. For this slice, if it fails, we 
-      // just wipe it and start fresh. A real app might do careful migrations here.
-      // E.g. migration check
-      if (parsed.schemaVersion && parsed.schemaVersion !== "1.0") {
+      // Attempt migration / repair
+      try {
+        const migrated = migrateProject(parsed);
+        const migratedValidation = parseProject(migrated);
+        if (migratedValidation.success) {
+          return migratedValidation.data;
+        }
+      } catch {
+        // Repair unsuccessful
+      }
+      
+      if (parsed.schemaVersion && parsed.schemaVersion !== "1.0" && parsed.schemaVersion !== "2.0") {
          console.warn("Schema version mismatch, wiping");
       }
       
@@ -33,16 +42,18 @@ export const storage = {
     }
   },
   
-  save: (project: ProjectDocument): void => {
+  save: (project: ProjectDocument): boolean => {
     try {
       const validation = parseProject(project);
       if (!validation.success) {
         console.error("Attempted to save invalid project", validation.errors);
-        return;
+        return false;
       }
       localStorage.setItem(STORAGE_KEY, JSON.stringify(project));
+      return true;
     } catch (e) {
       console.error("Storage save failed", e);
+      return false;
     }
   },
   

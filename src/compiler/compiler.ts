@@ -1,5 +1,6 @@
 import { CircuitTemplate, catalog } from "../catalog/components";
 import { ComponentInstance, Wire, ProjectDocument } from "../domain/types";
+import { areRolesCompatible } from "../domain/connectionRules";
 
 export interface CompileOptions {
   idFactory?: () => string;
@@ -70,8 +71,8 @@ export function compileTemplate(
       throw new Error(`Invalid template: Cannot connect to '${conn.toRole}', port is not a target`);
     }
 
-    const sharedRole = fromPortDef.roles.some(r => toPortDef.roles.includes(r));
-    if (!sharedRole) {
+    const isCompatible = areRolesCompatible(fromPortDef.roles, toPortDef.roles);
+    if (!isCompatible) {
       throw new Error(`Invalid template: Roles do not intersect between '${conn.fromRole}' and '${conn.toRole}'`);
     }
   }
@@ -109,12 +110,15 @@ export function compileTemplate(
       throw new Error(`Cannot resolve connection ${conn.fromRole} to ${conn.toRole}`);
     }
 
+    const wireId = `wire_${getNextId()}`;
     wires.push({
-      id: `wire_${getNextId()}`,
+      id: wireId,
       sourceInstance: sourceInstanceId,
       sourcePort: fromPort,
       targetInstance: targetInstanceId,
       targetPort: toPort,
+      a: { instanceId: sourceInstanceId, terminalKey: fromPort },
+      b: { instanceId: targetInstanceId, terminalKey: toPort },
       color: "red", // default
       gauge: "14" // default
     });

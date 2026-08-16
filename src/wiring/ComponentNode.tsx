@@ -28,7 +28,7 @@ export const ComponentNode: React.FC<NodeProps> = ({ data, selected }) => {
               className="wiring-terminal-row"
               style={{ justifyContent: isOutput ? "flex-end" : "flex-start" }}
             >
-              <span className="wiring-terminal-label">{t.key}</span>
+              {!isOutput && <span className="wiring-terminal-label mr-1">{t.key}</span>}
               <Handle
                 type={isOutput ? "source" : "target"}
                 position={isOutput ? Position.Right : Position.Left}
@@ -36,6 +36,7 @@ export const ComponentNode: React.FC<NodeProps> = ({ data, selected }) => {
                 style={{ top: `${topPosition}px` }}
                 aria-label={`${nodeData.name} port ${t.key} (${t.direction})`}
               />
+              {isOutput && <span className="wiring-terminal-label ml-1">{t.key}</span>}
             </div>
           );
         })}

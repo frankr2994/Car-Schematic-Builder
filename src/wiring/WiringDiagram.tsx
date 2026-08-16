@@ -4,11 +4,13 @@ import {
   Node,
   Edge,
   NodeChange,
+  Connection,
   ReactFlowProvider,
   useReactFlow,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import { WiringDiagramProps, WireDiagnostics } from "./model";
+import { WorkspaceSelection } from "../domain/types";
 import { layoutProject } from "./layout/layoutProject";
 import { WiringLayoutResult } from "./layout/types";
 import { buildWiringViewModel } from "./projectAdapter";
@@ -20,6 +22,14 @@ import {
   toggleWireDiagnostic,
   NodeUIStateMap,
 } from "./stateHelpers";
+import {
+  validateConnection,
+  connectTerminals,
+  reconnectWire,
+  deleteWire,
+  deleteInstance,
+  addInstance,
+} from "../domain/projectCommands";
 import WiringCanvas from "./WiringCanvas";
 import "./wiring.css";
 
@@ -28,15 +38,34 @@ function FlowController({
   onProjectChange,
   diagnostics: controlledDiagnostics,
   onDiagnosticChange,
+  selectedElement: controlledSelection,
+  onSelectionChange,
   readOnly = false,
 }: WiringDiagramProps) {
   const [internalDiagnostics, setInternalDiagnostics] = useState<WireDiagnostics>({});
+  const [internalSelection, setInternalSelection] = useState<WorkspaceSelection>(null);
   const [layoutResult, setLayoutResult] = useState<WiringLayoutResult>({ nodes: {} });
   const [nodeUIState, setNodeUIState] = useState<NodeUIStateMap>({});
   
-  const { fitView } = useReactFlow();
+  const { fitView, screenToFlowPosition } = useReactFlow();
   const isFirstLayoutRef = useRef(true);
   const prevProjectIdRef = useRef(project?.id);
+
+  // Active selection and diagnostics (controlled vs uncontrolled)
+  const currentSelection = controlledSelection !== undefined ? controlledSelection : internalSelection;
+  const currentDiagnostics = controlledDiagnostics !== undefined ? controlledDiagnostics : internalDiagnostics;
+
+  const setSelection = useCallback(
+    (selection: WorkspaceSelection) => {
+      if (controlledSelection === undefined) {
+        setInternalSelection(selection);
+      }
+      if (onSelectionChange) {
+        onSelectionChange(selection);
+      }
+    },
+    [controlledSelection, onSelectionChange]
+  );
 
   // Clear internal diagnostics and transient UI state when switching projects
   useEffect(() => {
@@ -44,19 +73,16 @@ function FlowController({
       prevProjectIdRef.current = project.id;
       setInternalDiagnostics({});
       setNodeUIState({});
+      setInternalSelection(null);
       isFirstLayoutRef.current = true;
     }
   }, [project?.id]);
-
-  // Active diagnostics map (controlled vs internal)
-  const currentDiagnostics = controlledDiagnostics !== undefined ? controlledDiagnostics : internalDiagnostics;
 
   const handleToggleDiagnostic = useCallback(
     (wireId: string) => {
       if (readOnly) return;
       const nextDiagnostic = toggleWireDiagnostic(currentDiagnostics, wireId);
 
-      // If uncontrolled (controlledDiagnostics is undefined), update internal state
       if (controlledDiagnostics === undefined) {
         setInternalDiagnostics((prev) => ({
           ...prev,
@@ -124,13 +150,28 @@ function FlowController({
   const renderedNodes = useMemo(() => {
     return viewModel.nodes.map((node) => {
       const ui = nodeUIState[node.id];
+      const isSelected =
+        currentSelection?.kind === "component" && currentSelection.id === node.id;
+
       return {
         ...node,
         position: ui?.position ?? node.position,
-        selected: ui?.selected ?? false,
+        selected: isSelected || (ui?.selected ?? false),
       };
     });
-  }, [viewModel.nodes, nodeUIState]);
+  }, [viewModel.nodes, nodeUIState, currentSelection]);
+
+  // Apply selection states to edges
+  const renderedEdges = useMemo(() => {
+    return viewModel.edges.map((edge) => {
+      const isSelected =
+        currentSelection?.kind === "wire" && currentSelection.id === edge.id;
+      return {
+        ...edge,
+        selected: isSelected,
+      };
+    });
+  }, [viewModel.edges, currentSelection]);
 
   // Handle all node changes (both transient dragging and selection toggling)
   const onNodesChange = useCallback((changes: NodeChange[]) => {
@@ -140,20 +181,177 @@ function FlowController({
   const onNodeDragStop = useCallback(
     (_: React.MouseEvent | MouseEvent | TouchEvent, node: Node) => {
       if (readOnly) return;
-      // Clear transient drag position and persist layout override
       setNodeUIState((prev) => applyNodeDragStop(prev, node.id));
-
       onProjectChange(createLayoutOverride(project, node.id, node.position));
     },
     [project, onProjectChange, readOnly]
   );
 
+  // Authoritative interactive wire creation validation
+  const isValidConnection = useCallback(
+    (connection: Edge | Connection) => {
+      if (readOnly || !project) return false;
+      if (!connection.source || !connection.target || !connection.sourceHandle || !connection.targetHandle) {
+        return false;
+      }
+      const val = validateConnection(project, {
+        sourceInstance: connection.source,
+        sourcePort: connection.sourceHandle,
+        targetInstance: connection.target,
+        targetPort: connection.targetHandle,
+      });
+      return val.valid;
+    },
+    [project, readOnly]
+  );
+
+  // Authoritative commit on connect
+  const onConnect = useCallback(
+    (connection: Connection) => {
+      if (readOnly || !project) return;
+      if (!connection.source || !connection.target || !connection.sourceHandle || !connection.targetHandle) {
+        return;
+      }
+
+      const result = connectTerminals(project, {
+        sourceInstance: connection.source,
+        sourcePort: connection.sourceHandle,
+        targetInstance: connection.target,
+        targetPort: connection.targetHandle,
+        color: "black",
+        gauge: "14",
+      });
+
+      if (result.ok) {
+        onProjectChange(result.project);
+        const newWire = result.project.wires[result.project.wires.length - 1];
+        if (newWire) {
+          setSelection({ kind: "wire", id: newWire.id });
+        }
+      }
+    },
+    [project, onProjectChange, readOnly, setSelection]
+  );
+
+  // Reconnection commit
+  const onReconnect = useCallback(
+    (oldEdge: Edge, newConnection: Connection) => {
+      if (readOnly || !project) return;
+      const isSourceChanged = oldEdge.source !== newConnection.source || oldEdge.sourceHandle !== newConnection.sourceHandle;
+      const endpointToChange = isSourceChanged ? "source" : "target";
+      const newEndpoint = isSourceChanged
+        ? { instanceId: newConnection.source || "", portKey: newConnection.sourceHandle || "" }
+        : { instanceId: newConnection.target || "", portKey: newConnection.targetHandle || "" };
+
+      const result = reconnectWire(project, oldEdge.id, newEndpoint, endpointToChange);
+      if (result.ok) {
+        onProjectChange(result.project);
+      }
+    },
+    [project, onProjectChange, readOnly]
+  );
+
+  // Node deletion with cascade
+  const onNodesDelete = useCallback(
+    (nodesToDelete: Node[]) => {
+      if (readOnly || !project || nodesToDelete.length === 0) return;
+      let currentProj = project;
+      for (const node of nodesToDelete) {
+        const res = deleteInstance(currentProj, node.id);
+        if (res.ok) {
+          currentProj = res.project;
+        }
+      }
+      onProjectChange(currentProj);
+      setSelection(null);
+    },
+    [project, onProjectChange, readOnly, setSelection]
+  );
+
+  // Edge deletion
+  const onEdgesDelete = useCallback(
+    (edgesToDelete: Edge[]) => {
+      if (readOnly || !project || edgesToDelete.length === 0) return;
+      let currentProj = project;
+      for (const edge of edgesToDelete) {
+        const res = deleteWire(currentProj, edge.id);
+        if (res.ok) {
+          currentProj = res.project;
+        }
+      }
+      onProjectChange(currentProj);
+      setSelection(null);
+    },
+    [project, onProjectChange, readOnly, setSelection]
+  );
+
+  // Drag and drop from component palette onto canvas
+  const onDragOver = useCallback((event: React.DragEvent) => {
+    event.preventDefault();
+    event.dataTransfer.dropEffect = "move";
+  }, []);
+
+  const onDrop = useCallback(
+    (event: React.DragEvent) => {
+      event.preventDefault();
+      if (readOnly || !project) return;
+
+      const kind = event.dataTransfer.getData("application/reactflow-component-kind");
+      if (!kind) return;
+
+      const flowPosition = screenToFlowPosition({
+        x: event.clientX,
+        y: event.clientY,
+      });
+
+      const res = addInstance(project, {
+        kind,
+        position: flowPosition,
+      });
+
+      if (res.ok) {
+        onProjectChange(res.project.project);
+        setSelection({ kind: "component", id: res.project.instance.id });
+      }
+    },
+    [project, onProjectChange, readOnly, screenToFlowPosition, setSelection]
+  );
+
+  // Selection handlers
+  const onNodeClick = useCallback(
+    (_: React.MouseEvent, node: Node) => {
+      setSelection({ kind: "component", id: node.id });
+    },
+    [setSelection]
+  );
+
+  const onEdgeClick = useCallback(
+    (_: React.MouseEvent, edge: Edge) => {
+      setSelection({ kind: "wire", id: edge.id });
+    },
+    [setSelection]
+  );
+
+  const onPaneClick = useCallback(() => {
+    setSelection(null);
+  }, [setSelection]);
+
   return (
     <WiringCanvas
       nodes={renderedNodes as unknown as Node[]}
-      edges={viewModel.edges as unknown as Edge[]}
+      edges={renderedEdges as unknown as Edge[]}
       onNodesChange={onNodesChange}
       onNodeDragStop={onNodeDragStop}
+      onConnect={onConnect}
+      isValidConnection={isValidConnection}
+      onReconnect={onReconnect}
+      onNodesDelete={onNodesDelete}
+      onEdgesDelete={onEdgesDelete}
+      onDrop={onDrop}
+      onDragOver={onDragOver}
+      onNodeClick={onNodeClick}
+      onEdgeClick={onEdgeClick}
+      onPaneClick={onPaneClick}
       readOnly={readOnly}
     />
   );

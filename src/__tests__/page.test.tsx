@@ -63,7 +63,7 @@ describe("Home Page", () => {
     
     await waitFor(() => {
       // It should load and NOT overwrite the project with the default one
-      expect(screen.getByText(/Batt/i)).toBeInTheDocument();
+      expect(screen.getByText("Batt")).toBeInTheDocument();
     });
     
     const saved = JSON.parse(localStorage.getItem("wiring_project") || "{}");

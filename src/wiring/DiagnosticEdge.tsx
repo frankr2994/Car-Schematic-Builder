@@ -93,6 +93,7 @@ export const DiagnosticEdge: React.FC<EdgeProps> = ({
   targetPosition,
   style = {},
   markerEnd,
+  selected,
   data,
 }) => {
   const edgeData = (data as unknown as WiringEdgeData) || {
@@ -110,6 +111,10 @@ export const DiagnosticEdge: React.FC<EdgeProps> = ({
     borderRadius: 8,
   });
 
+  const strokeWidth = selected
+    ? WIRING_THEME.strokes.selectedWireWidth
+    : style.strokeWidth || WIRING_THEME.strokes.defaultWireWidth;
+
   return (
     <>
       <BaseEdge
@@ -118,7 +123,7 @@ export const DiagnosticEdge: React.FC<EdgeProps> = ({
         markerEnd={markerEnd}
         style={{
           ...style,
-          strokeWidth: style.strokeWidth || WIRING_THEME.strokes.defaultWireWidth,
+          strokeWidth,
         }}
       />
       <EdgeLabelRenderer>
