@@ -1,0 +1,141 @@
+/* 60s/70s Service Manual Wiring Diagram Styles */
+/* All theme variables are defined in src/wiring/theme.ts as the single source of truth */
+
+.wiring-diagram-container {
+  width: 100%;
+  height: 100%;
+  position: relative;
+  background-color: transparent;
+}
+
+.wiring-component-node {
+  background-color: var(--wiring-node-bg, #ffffff);
+  border: var(--wiring-node-border-width, 2px) solid var(--wiring-node-border, #000000);
+  width: var(--wiring-node-width, 150px);
+  min-height: var(--wiring-node-min-height, 50px);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  font-size: 0.75rem;
+  border-radius: 2px;
+  box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+  user-select: none;
+  box-sizing: border-box;
+  transition: box-shadow 0.15s ease-in-out;
+}
+
+.wiring-component-node:hover {
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+}
+
+.wiring-component-node.selected,
+.wiring-component-node:focus-visible {
+  outline: 2px solid #2563eb;
+  outline-offset: 2px;
+}
+
+.wiring-node-header {
+  background-color: var(--wiring-node-header-bg, #e5e7eb);
+  border-bottom: var(--wiring-node-border-width, 2px) solid var(--wiring-node-border, #000000);
+  min-height: var(--wiring-node-header-height, 28px);
+  padding: 0.25rem;
+  text-align: center;
+  font-weight: 700;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  box-sizing: border-box;
+}
+
+.wiring-node-body {
+  padding: var(--wiring-terminal-padding, 8px);
+  position: relative;
+  min-height: calc(var(--wiring-node-min-height, 50px) - var(--wiring-node-header-height, 28px) - var(--wiring-node-footer-height, 22px));
+  box-sizing: border-box;
+}
+
+.wiring-terminal-row {
+  display: flex;
+  align-items: center;
+  height: var(--wiring-terminal-row-height, 20px);
+  box-sizing: border-box;
+}
+
+.wiring-terminal-label {
+  font-size: 10px;
+  line-height: 1;
+}
+
+.wiring-node-footer {
+  text-align: center;
+  background-color: var(--wiring-node-footer-bg, #f3f4f6);
+  font-size: 10px;
+  border-top: var(--wiring-node-border-width, 2px) solid var(--wiring-node-border, #000000);
+  min-height: var(--wiring-node-footer-height, 22px);
+  padding: 0.25rem;
+  color: #374151;
+  box-sizing: border-box;
+}
+
+/* Diagnostic Edge & Toggle Badge */
+.wiring-diagnostic-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 6px;
+  font-size: 9px;
+  font-weight: 700;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  text-transform: uppercase;
+  border: var(--wiring-badge-border-width, 1.5px) solid var(--wiring-node-border, #000000);
+  border-radius: 9999px;
+  background-color: var(--wiring-node-bg, #ffffff);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+  cursor: pointer;
+  pointer-events: all;
+  transition: transform 0.1s ease, background-color 0.15s ease;
+}
+
+.wiring-diagnostic-badge:hover {
+  transform: scale(1.1);
+}
+
+.wiring-diagnostic-badge:focus-visible {
+  outline: 2px solid #2563eb;
+  outline-offset: 1px;
+}
+
+.wiring-diagnostic-badge.status-normal {
+  color: var(--wiring-wire-normal, #16a34a);
+  border-color: var(--wiring-wire-normal, #16a34a);
+  background-color: var(--wiring-wire-normal-bg, #f0fdf4);
+}
+
+.wiring-diagnostic-badge.status-open {
+  color: var(--wiring-wire-open, #dc2626);
+  border-color: var(--wiring-wire-open, #dc2626);
+  background-color: var(--wiring-wire-open-bg, #fef2f2);
+}
+
+.wiring-diagnostic-badge.status-unknown {
+  color: var(--wiring-wire-unknown, #6b7280);
+  border-color: var(--wiring-wire-unknown, #6b7280);
+  background-color: var(--wiring-wire-unknown-bg, #f9fafb);
+}
+
+/* Print Rules */
+@media print {
+  .wiring-component-node {
+    box-shadow: none !important;
+    border-color: var(--wiring-node-border, #000000) !important;
+    border-width: var(--wiring-node-border-width, 2px) !important;
+    break-inside: avoid;
+  }
+  
+  .wiring-diagnostic-badge {
+    box-shadow: none !important;
+  }
+  
+  .react-flow__handle {
+    border-color: var(--wiring-port-border, #000000) !important;
+    background-color: var(--wiring-port-bg, #000000) !important;
+  }
+}

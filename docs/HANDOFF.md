@@ -17,3 +17,10 @@
 - Refactored `src/compiler/compiler.ts` to include detailed template compilation logic, including role validation, component catalog checks, connection port validation (source/target direction), and ID generation.
 - Updated `src/app/page.tsx` to use the new storage mechanism (`storage.save`/`load`) for persisting project state instead of direct `localStorage` manipulation.
 - Enhanced `src/components/WiringDiagram.tsx` with React Flow integration, improved node styling (including print styles), and implemented logic for handling node dragging and layout overrides persistence via `onNodeDragStop`.
+
+## [2026-08-16T04:00:04.052Z] Baseline changes
+
+- Extract the diagram, layout, and model into `src/wiring` with its own CSS
+- Add WireDiagnostics state in Home so users can toggle wire status (OK/Open/Unk)
+- Replace old ELK graph builder with a normalized project adapter for consistent layouts
+- Verify: check that wiring.css loads correctly and the new diagnostic legend renders

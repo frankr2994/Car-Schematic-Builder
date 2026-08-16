@@ -1,44 +1,20 @@
-import ELK from "elkjs/lib/elk.bundled.js";
+import ELK, { ElkNode } from "elkjs/lib/elk.bundled.js";
 import { ProjectDocument } from "../domain/types";
-import { catalog } from "../catalog/components";
+import { projectToLayoutRequest } from "../wiring/projectAdapter";
+import { buildElkGraph } from "../wiring/layout/buildElkGraph";
 
 const elk = new ELK();
 
-export async function layoutProject(project: ProjectDocument) {
-  const graph = {
-    id: "root",
-    layoutOptions: {
-      "elk.algorithm": "layered",
-      "elk.direction": "RIGHT",
-      "elk.spacing.nodeNode": "50",
-      "elk.layered.spacing.nodeNodeBetweenLayers": "50",
-      "elk.portConstraints": "FIXED_SIDE" // Enforce port side constraints
-    },
-    children: project.instances.map(inst => {
-      const def = catalog[inst.kind];
-      return {
-        id: inst.id,
-        width: 150,
-        height: Math.max(50, def.terminals.length * 20 + 30),
-        labels: [{ text: inst.name }],
-        ports: def.terminals.map((t) => ({
-          id: `${inst.id}_${t.key}`,
-          width: 10,
-          height: 10,
-          layoutOptions: {
-            "elk.port.side": t.direction === "source" ? "EAST" : "WEST"
-          }
-        }))
-      };
-    }),
-    edges: project.wires.map(wire => ({
-      id: wire.id,
-      sources: [`${wire.sourceInstance}_${wire.sourcePort}`],
-      targets: [`${wire.targetInstance}_${wire.targetPort}`]
-    }))
-  };
-
+/**
+ * Legacy layout function that returns the raw ELK graph hierarchy with `children`.
+ * Maintained for backward compatibility. For normalized layout results, import from `@/wiring`.
+ */
+export async function layoutProject(project: ProjectDocument): Promise<ElkNode> {
+  const request = projectToLayoutRequest(project);
+  const graph = buildElkGraph(request);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const layoutedGraph = await elk.layout(graph as any);
+  const layoutedGraph = (await elk.layout(graph as any)) as ElkNode;
   return layoutedGraph;
 }
+
+export type { WiringLayoutRequest, WiringLayoutResult, PositionedNode } from "../wiring/layout/types";
