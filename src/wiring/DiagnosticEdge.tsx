@@ -14,6 +14,7 @@ export interface DiagnosticBadgeProps {
   gauge?: string;
   diagnostic?: WireDiagnostic;
   onToggle?: (wireId: string) => void;
+  readOnly?: boolean;
 }
 
 export const DiagnosticBadge: React.FC<DiagnosticBadgeProps> = ({
@@ -22,12 +23,14 @@ export const DiagnosticBadge: React.FC<DiagnosticBadgeProps> = ({
   gauge,
   diagnostic,
   onToggle,
+  readOnly = false,
 }) => {
   const continuity = diagnostic?.continuity || "normal";
+  const isInteractive = !readOnly && Boolean(onToggle);
 
   const handleToggle = (e: React.MouseEvent) => {
     e.stopPropagation();
-    if (onToggle) {
+    if (isInteractive && onToggle) {
       onToggle(wireId);
     }
   };
@@ -39,15 +42,27 @@ export const DiagnosticBadge: React.FC<DiagnosticBadgeProps> = ({
       ? "UNK"
       : "OK";
 
-  const badgeClass = `wiring-diagnostic-badge status-${continuity}`;
+  const badgeClass = `wiring-diagnostic-badge status-${continuity}${
+    !isInteractive ? " disabled" : ""
+  }`;
 
   return (
     <button
       type="button"
       className={badgeClass}
       onClick={handleToggle}
-      aria-label={`Wire ${wireId}: status is ${continuity}. Click to toggle fault state.`}
-      title={`Wire ${wireId} (${wireColor || "black"}, ${gauge || "14"}AWG) - Status: ${continuity}. Click to toggle.`}
+      disabled={!isInteractive}
+      aria-disabled={!isInteractive}
+      aria-label={
+        isInteractive
+          ? `Wire ${wireId}: status is ${continuity}. Click to toggle fault state.`
+          : `Wire ${wireId}: status is ${continuity}.`
+      }
+      title={
+        isInteractive
+          ? `Wire ${wireId} (${wireColor || "black"}, ${gauge || "14"}AWG) - Status: ${continuity}. Click to toggle.`
+          : `Wire ${wireId} (${wireColor || "black"}, ${gauge || "14"}AWG) - Status: ${continuity}.`
+      }
     >
       <span
         style={{
@@ -121,6 +136,7 @@ export const DiagnosticEdge: React.FC<EdgeProps> = ({
             gauge={edgeData.gauge}
             diagnostic={edgeData.diagnostic}
             onToggle={edgeData.onToggleDiagnostic}
+            readOnly={edgeData.readOnly || !edgeData.onToggleDiagnostic}
           />
         </div>
       </EdgeLabelRenderer>

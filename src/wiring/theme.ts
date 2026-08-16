@@ -82,17 +82,44 @@ export const WIRING_THEME: WiringTheme = {
   },
 };
 
+export function calculateTerminalRowCenter(
+  index: number,
+  theme: WiringTheme = WIRING_THEME
+): number {
+  return (
+    theme.geometry.headerHeight +
+    theme.geometry.terminalPadding +
+    (index + 0.5) * theme.geometry.terminalRowHeight
+  );
+}
+
 export function calculateNodeHeight(
   terminalCount: number,
   theme: WiringTheme = WIRING_THEME
 ): number {
   const bodyPadding = terminalCount > 0 ? theme.geometry.terminalPadding * 2 : 0;
-  const calculatedHeight =
+  const contentHeight =
     theme.geometry.headerHeight +
     theme.geometry.footerHeight +
     terminalCount * theme.geometry.terminalRowHeight +
     bodyPadding;
-  return Math.max(theme.geometry.nodeMinHeight, calculatedHeight);
+  const outerHeight = contentHeight + theme.strokes.nodeBorderWidth * 2;
+  return Math.max(theme.geometry.nodeMinHeight, outerHeight);
+}
+
+export function calculateFallbackNodePosition(
+  index: number,
+  theme: WiringTheme = WIRING_THEME
+): { x: number; y: number } {
+  const cols = 3;
+  const col = index % cols;
+  const row = Math.floor(index / cols);
+  const spacingX = theme.geometry.nodeWidth + theme.geometry.spacingNodeNode;
+  const spacingY = theme.geometry.nodeMinHeight + 70;
+  return {
+    x: 50 + col * spacingX,
+    y: 50 + row * spacingY,
+  };
 }
 
 export function getWiringThemeCSSVariables(

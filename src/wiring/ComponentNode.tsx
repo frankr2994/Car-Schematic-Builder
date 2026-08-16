@@ -2,7 +2,7 @@ import React, { memo } from "react";
 import { Handle, Position, NodeProps } from "@xyflow/react";
 import { PortDefinition } from "../catalog/components";
 import { WiringNodeData } from "./model";
-import { WIRING_THEME } from "./theme";
+import { calculateTerminalRowCenter } from "./theme";
 
 export const ComponentNode: React.FC<NodeProps> = ({ data, selected }) => {
   const nodeData = data as unknown as WiringNodeData;
@@ -20,7 +20,7 @@ export const ComponentNode: React.FC<NodeProps> = ({ data, selected }) => {
       <div className="wiring-node-body">
         {nodeData.terminals.map((t: PortDefinition, i: number) => {
           const isOutput = t.direction === "source";
-          const topPosition = (i + 1) * WIRING_THEME.geometry.terminalRowHeight;
+          const topPosition = calculateTerminalRowCenter(i);
 
           return (
             <div

@@ -8,11 +8,18 @@ import {
   useReactFlow,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
-import { WiringDiagramProps, WireDiagnostics, WireDiagnostic, ContinuityState } from "./model";
+import { WiringDiagramProps, WireDiagnostics } from "./model";
 import { layoutProject } from "./layout/layoutProject";
 import { WiringLayoutResult } from "./layout/types";
 import { buildWiringViewModel } from "./projectAdapter";
 import { getWiringThemeCSSVariables } from "./theme";
+import {
+  applyNodeChanges,
+  applyNodeDragStop,
+  createLayoutOverride,
+  toggleWireDiagnostic,
+  NodeUIStateMap,
+} from "./stateHelpers";
 import WiringCanvas from "./WiringCanvas";
 import "./wiring.css";
 
@@ -25,33 +32,43 @@ function FlowController({
 }: WiringDiagramProps) {
   const [internalDiagnostics, setInternalDiagnostics] = useState<WireDiagnostics>({});
   const [layoutResult, setLayoutResult] = useState<WiringLayoutResult>({ nodes: {} });
-  const [nodeUIState, setNodeUIState] = useState<
-    Record<string, { position?: { x: number; y: number }; selected?: boolean }>
-  >({});
+  const [nodeUIState, setNodeUIState] = useState<NodeUIStateMap>({});
   
   const { fitView } = useReactFlow();
   const isFirstLayoutRef = useRef(true);
+  const prevProjectIdRef = useRef(project?.id);
+
+  // Clear internal diagnostics and transient UI state when switching projects
+  useEffect(() => {
+    if (project?.id && prevProjectIdRef.current !== project.id) {
+      prevProjectIdRef.current = project.id;
+      setInternalDiagnostics({});
+      setNodeUIState({});
+      isFirstLayoutRef.current = true;
+    }
+  }, [project?.id]);
 
   // Active diagnostics map (controlled vs internal)
-  const currentDiagnostics = controlledDiagnostics || internalDiagnostics;
+  const currentDiagnostics = controlledDiagnostics !== undefined ? controlledDiagnostics : internalDiagnostics;
 
   const handleToggleDiagnostic = useCallback(
     (wireId: string) => {
-      const current = currentDiagnostics[wireId]?.continuity || "normal";
-      const next: ContinuityState =
-        current === "normal" ? "open" : current === "open" ? "unknown" : "normal";
-      const nextDiagnostic: WireDiagnostic = { continuity: next };
+      if (readOnly) return;
+      const nextDiagnostic = toggleWireDiagnostic(currentDiagnostics, wireId);
 
-      if (onDiagnosticChange) {
-        onDiagnosticChange(wireId, nextDiagnostic);
-      } else {
+      // If uncontrolled (controlledDiagnostics is undefined), update internal state
+      if (controlledDiagnostics === undefined) {
         setInternalDiagnostics((prev) => ({
           ...prev,
           [wireId]: nextDiagnostic,
         }));
       }
+
+      if (onDiagnosticChange) {
+        onDiagnosticChange(wireId, nextDiagnostic);
+      }
     },
-    [currentDiagnostics, onDiagnosticChange]
+    [readOnly, currentDiagnostics, controlledDiagnostics, onDiagnosticChange]
   );
 
   // Structural topology key tracking instances, kinds, wires, and port endpoints
@@ -92,16 +109,16 @@ function FlowController({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [topologyKey, fitView]);
 
-  // Derive base view model from project, layoutResult, and diagnostics
+  // Derive base view model from project, layoutResult, diagnostics, and readOnly status
   const viewModel = useMemo(() => {
     if (!project) return { nodes: [], edges: [] };
     return buildWiringViewModel(
       project,
       layoutResult,
       currentDiagnostics,
-      handleToggleDiagnostic
+      readOnly ? undefined : handleToggleDiagnostic
     );
-  }, [project, layoutResult, currentDiagnostics, handleToggleDiagnostic]);
+  }, [project, layoutResult, currentDiagnostics, readOnly, handleToggleDiagnostic]);
 
   // Apply transient drag positions and selection states to rendered nodes
   const renderedNodes = useMemo(() => {
@@ -117,48 +134,16 @@ function FlowController({
 
   // Handle all node changes (both transient dragging and selection toggling)
   const onNodesChange = useCallback((changes: NodeChange[]) => {
-    setNodeUIState((prev) => {
-      let updated = false;
-      const next = { ...prev };
-
-      for (const change of changes) {
-        if (change.type === "position" && change.position) {
-          next[change.id] = {
-            ...next[change.id],
-            position: change.position,
-          };
-          updated = true;
-        } else if (change.type === "select") {
-          next[change.id] = {
-            ...next[change.id],
-            selected: change.selected,
-          };
-          updated = true;
-        }
-      }
-
-      return updated ? next : prev;
-    });
+    setNodeUIState((prev) => applyNodeChanges(prev, changes));
   }, []);
 
   const onNodeDragStop = useCallback(
     (_: React.MouseEvent | MouseEvent | TouchEvent, node: Node) => {
       if (readOnly) return;
       // Clear transient drag position and persist layout override
-      setNodeUIState((prev) => {
-        if (!prev[node.id]?.position) return prev;
-        const next = { ...prev };
-        next[node.id] = { ...next[node.id], position: undefined };
-        return next;
-      });
+      setNodeUIState((prev) => applyNodeDragStop(prev, node.id));
 
-      onProjectChange({
-        ...project,
-        layoutOverrides: {
-          ...project.layoutOverrides,
-          [node.id]: { x: node.position.x, y: node.position.y, locked: false },
-        },
-      });
+      onProjectChange(createLayoutOverride(project, node.id, node.position));
     },
     [project, onProjectChange, readOnly]
   );

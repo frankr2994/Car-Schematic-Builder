@@ -7,35 +7,49 @@ import {
   layoutWiringRequest,
   WIRING_THEME,
   calculateNodeHeight,
+  calculateTerminalRowCenter,
 } from "../wiring";
 import { buildElkGraph } from "../wiring/layout/buildElkGraph";
 
 describe("Wiring Layout & Geometry", () => {
   const sampleProject = compileTemplate(templates[0]);
 
-  it("calculates accurate node height from terminal count strictly based on theme tokens", () => {
+  it("calculates accurate complete outer node height from terminal count including borders", () => {
+    const borderWidth = WIRING_THEME.strokes.nodeBorderWidth * 2;
     const expectedHeight0 = Math.max(
       WIRING_THEME.geometry.nodeMinHeight,
-      WIRING_THEME.geometry.headerHeight + WIRING_THEME.geometry.footerHeight
+      WIRING_THEME.geometry.headerHeight + WIRING_THEME.geometry.footerHeight + borderWidth
     );
     const expectedHeight2 = Math.max(
       WIRING_THEME.geometry.nodeMinHeight,
       WIRING_THEME.geometry.headerHeight +
         WIRING_THEME.geometry.footerHeight +
         2 * WIRING_THEME.geometry.terminalRowHeight +
-        WIRING_THEME.geometry.terminalPadding * 2
+        WIRING_THEME.geometry.terminalPadding * 2 +
+        borderWidth
     );
     const expectedHeight4 = Math.max(
       WIRING_THEME.geometry.nodeMinHeight,
       WIRING_THEME.geometry.headerHeight +
         WIRING_THEME.geometry.footerHeight +
         4 * WIRING_THEME.geometry.terminalRowHeight +
-        WIRING_THEME.geometry.terminalPadding * 2
+        WIRING_THEME.geometry.terminalPadding * 2 +
+        borderWidth
     );
 
     expect(calculateNodeHeight(0)).toBe(expectedHeight0);
+    expect(calculateNodeHeight(2)).toBe(110);
     expect(calculateNodeHeight(2)).toBe(expectedHeight2);
     expect(calculateNodeHeight(4)).toBe(expectedHeight4);
+  });
+
+  it("calculates exact terminal row vertical centers matching rendered DOM hierarchy", () => {
+    // Row 0: 28px header + 8px body padding + 10px half-row = 46px
+    expect(calculateTerminalRowCenter(0)).toBe(46);
+    // Row 1: 28px header + 8px body padding + 20px first row + 10px = 66px
+    expect(calculateTerminalRowCenter(1)).toBe(66);
+    // Row 2: 86px
+    expect(calculateTerminalRowCenter(2)).toBe(86);
   });
 
   it("transforms a ProjectDocument into a library-independent WiringLayoutRequest", () => {
@@ -104,5 +118,25 @@ describe("Wiring Layout & Geometry", () => {
     expect(result.nodes["node2"]).toBeDefined();
     // Source should be to the left of target in RIGHT direction layout
     expect(result.nodes["node2"].x).toBeGreaterThan(result.nodes["node1"].x);
+  });
+
+  it("handles ELK layout failures gracefully with deterministic fallback placement", async () => {
+    // Malformed request with invalid connections structure that would cause layout engine issues
+    const malformedRequest = {
+      id: "failing-req",
+      nodes: [
+        { id: "nodeA", name: "Node A", width: 150, height: 70, ports: [] },
+        { id: "nodeB", name: "Node B", width: 150, height: 70, ports: [] },
+      ],
+      connections: [{ id: "c1", source: "non_existent_1", target: "non_existent_2" }],
+    };
+
+    const result = await layoutWiringRequest(malformedRequest);
+    expect(result.nodes["nodeA"]).toBeDefined();
+    expect(result.nodes["nodeB"]).toBeDefined();
+    expect(typeof result.nodes["nodeA"].x).toBe("number");
+    expect(typeof result.nodes["nodeB"].x).toBe("number");
+    // Ensure nodes are not collapsed at the same coordinate
+    expect(result.nodes["nodeA"].x !== result.nodes["nodeB"].x || result.nodes["nodeA"].y !== result.nodes["nodeB"].y).toBe(true);
   });
 });

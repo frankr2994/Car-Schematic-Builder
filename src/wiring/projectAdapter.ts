@@ -8,7 +8,7 @@ import {
   WireDiagnostics,
   WireDiagnostic,
 } from "./model";
-import { WIRING_THEME, calculateNodeHeight } from "./theme";
+import { WIRING_THEME, calculateNodeHeight, calculateFallbackNodePosition } from "./theme";
 
 export function projectToLayoutRequest(project: ProjectDocument): WiringLayoutRequest {
   return {
@@ -46,14 +46,15 @@ export function buildWiringViewModel(
 ): WiringViewModel {
   const nodeLookup = layoutResult.nodes || {};
 
-  const nodes: WiringNodeViewModel[] = project.instances.map((inst) => {
+  const nodes: WiringNodeViewModel[] = project.instances.map((inst, index) => {
     const positioned = nodeLookup[inst.id];
     const override = project.layoutOverrides[inst.id];
     const def = catalog[inst.kind] || { terminals: [] };
 
+    const fallback = calculateFallbackNodePosition(index);
     const position = override
       ? { x: override.x, y: override.y }
-      : { x: positioned?.x ?? 0, y: positioned?.y ?? 0 };
+      : { x: positioned?.x ?? fallback.x, y: positioned?.y ?? fallback.y };
 
     return {
       id: inst.id,
@@ -107,6 +108,7 @@ export function buildWiringViewModel(
         gauge: wire.gauge,
         diagnostic,
         onToggleDiagnostic,
+        readOnly: !onToggleDiagnostic,
       },
       style: {
         stroke: strokeColor,

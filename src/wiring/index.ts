@@ -20,9 +20,20 @@ export type {
 export {
   WIRING_THEME,
   calculateNodeHeight,
+  calculateTerminalRowCenter,
+  calculateFallbackNodePosition,
   getWiringThemeCSSVariables,
 } from "./theme";
 export type { WiringTheme } from "./theme";
+
+export {
+  applyNodeChanges,
+  applyNodeDragStop,
+  createLayoutOverride,
+  nextContinuityState,
+  toggleWireDiagnostic,
+} from "./stateHelpers";
+export type { NodeUIStateMap } from "./stateHelpers";
 
 export { layoutProject, layoutWiringRequest } from "./layout/layoutProject";
 export type {

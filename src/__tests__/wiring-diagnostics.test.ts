@@ -62,4 +62,12 @@ describe("Wiring Diagnostics & Fault Overlays", () => {
     edge?.data.onToggleDiagnostic?.(firstWireId);
     expect(mockToggle).toHaveBeenCalledWith(firstWireId);
   });
+
+  it("marks edge data as readOnly when onToggleDiagnostic is omitted", () => {
+    const viewModel = buildWiringViewModel(sampleProject, mockLayoutResult, {});
+    const edge = viewModel.edges.find((e) => e.id === firstWireId);
+
+    expect(edge?.data.readOnly).toBe(true);
+    expect(edge?.data.onToggleDiagnostic).toBeUndefined();
+  });
 });

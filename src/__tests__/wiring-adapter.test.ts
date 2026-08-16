@@ -43,10 +43,11 @@ describe("Wiring Project Adapter & View Model Builder", () => {
     expect(overriddenNode?.position).toEqual({ x: 999, y: 888 });
   });
 
-  it("falls back gracefully when layout result does not contain an instance", () => {
+  it("falls back gracefully with deterministic coordinates when layout result does not contain an instance", () => {
     const emptyLayoutResult: WiringLayoutResult = { nodes: {} };
     const viewModel = buildWiringViewModel(sampleProject, emptyLayoutResult);
 
-    expect(viewModel.nodes[0].position).toEqual({ x: 0, y: 0 });
+    expect(viewModel.nodes[0].position).toEqual({ x: 50, y: 50 });
+    expect(viewModel.nodes[1].position.x).toBeGreaterThan(viewModel.nodes[0].position.x);
   });
 });

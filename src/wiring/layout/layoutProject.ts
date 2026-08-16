@@ -4,31 +4,49 @@ import { buildElkGraph } from "./buildElkGraph";
 import { projectToLayoutRequest } from "../projectAdapter";
 import { PositionedNode, WiringLayoutRequest, WiringLayoutResult } from "./types";
 
+import { calculateFallbackNodePosition } from "../theme";
+
 const elk = new ELK();
 
 export async function layoutWiringRequest(request: WiringLayoutRequest): Promise<WiringLayoutResult> {
-  const elkGraph = buildElkGraph(request);
-  
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const layouted = (await elk.layout(elkGraph as any)) as ElkNode;
-  
-  const nodes: Record<string, PositionedNode> = {};
-  
-  if (layouted && layouted.children) {
-    for (const child of layouted.children) {
-      if (child.id) {
-        nodes[child.id] = {
-          id: child.id,
-          x: child.x ?? 0,
-          y: child.y ?? 0,
-          width: child.width ?? 0,
-          height: child.height ?? 0,
-        };
+  try {
+    const elkGraph = buildElkGraph(request);
+    
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const layouted = (await elk.layout(elkGraph as any)) as ElkNode;
+    
+    const nodes: Record<string, PositionedNode> = {};
+    
+    if (layouted && layouted.children) {
+      for (const child of layouted.children) {
+        if (child.id) {
+          nodes[child.id] = {
+            id: child.id,
+            x: child.x ?? 0,
+            y: child.y ?? 0,
+            width: child.width ?? 0,
+            height: child.height ?? 0,
+          };
+        }
       }
     }
-  }
 
-  return { nodes };
+    return { nodes };
+  } catch (err) {
+    console.error("ELK layout failed, using deterministic fallback positions:", err);
+    const fallbackNodes: Record<string, PositionedNode> = {};
+    request.nodes.forEach((node, idx) => {
+      const pos = calculateFallbackNodePosition(idx);
+      fallbackNodes[node.id] = {
+        id: node.id,
+        x: pos.x,
+        y: pos.y,
+        width: node.width,
+        height: node.height,
+      };
+    });
+    return { nodes: fallbackNodes };
+  }
 }
 
 export async function layoutProject(project: ProjectDocument): Promise<WiringLayoutResult> {

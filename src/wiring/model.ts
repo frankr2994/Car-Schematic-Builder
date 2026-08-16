@@ -36,6 +36,7 @@ export interface WiringEdgeData extends Record<string, unknown> {
   gauge?: string;
   diagnostic: WireDiagnostic;
   onToggleDiagnostic?: (wireId: string) => void;
+  readOnly?: boolean;
 }
 
 export interface WiringEdgeViewModel {
@@ -54,10 +55,13 @@ export interface WiringViewModel {
   edges: WiringEdgeViewModel[];
 }
 
-export interface WiringDiagramProps {
+export interface BaseWiringDiagramProps {
   project: ProjectDocument;
   onProjectChange: (project: ProjectDocument) => void;
-  diagnostics?: WireDiagnostics;
-  onDiagnosticChange?: (wireId: string, diagnostic: WireDiagnostic) => void;
   readOnly?: boolean;
 }
+
+export type WiringDiagramProps = BaseWiringDiagramProps & {
+  diagnostics?: WireDiagnostics;
+  onDiagnosticChange?: (wireId: string, diagnostic: WireDiagnostic) => void;
+};
