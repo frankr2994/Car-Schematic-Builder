@@ -167,6 +167,30 @@ describe("WiringDiagram Component & Lifecycle Regression Suite", () => {
       const next3 = toggleWireDiagnostic({ wire_1: next2 }, "wire_1");
       expect(next3.continuity).toBe("normal");
     });
+
+    it("preserves label, notes, and custom metadata when toggling wire diagnostics", () => {
+      const initialWithMetadata: WireDiagnostics = {
+        main_harness_wire: {
+          continuity: "normal",
+          label: "12V Ignition Feed",
+          notes: "Trace along firewall bulkhead connector",
+        },
+      };
+
+      const toggled = toggleWireDiagnostic(initialWithMetadata, "main_harness_wire");
+      expect(toggled).toEqual({
+        continuity: "open",
+        label: "12V Ignition Feed",
+        notes: "Trace along firewall bulkhead connector",
+      });
+
+      const toggledAgain = toggleWireDiagnostic({ main_harness_wire: toggled }, "main_harness_wire");
+      expect(toggledAgain).toEqual({
+        continuity: "unknown",
+        label: "12V Ignition Feed",
+        notes: "Trace along firewall bulkhead connector",
+      });
+    });
   });
 
   describe("Controlled vs Uncontrolled Diagnostics (P2)", () => {

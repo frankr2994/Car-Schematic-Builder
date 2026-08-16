@@ -24,3 +24,8 @@
 - Add WireDiagnostics state in Home so users can toggle wire status (OK/Open/Unk)
 - Replace old ELK graph builder with a normalized project adapter for consistent layouts
 - Verify: check that wiring.css loads correctly and the new diagnostic legend renders
+
+## [2026-08-16T04:13:12.920Z] fix toggleWireDiagnostic to preserve label and notes
+
+- Spread the existing wire object into toggleWireDiagnostic so non-continuity fields (label, notes) are not dropped
+- Add tests verifying metadata is retained through multiple toggles in both wiring-diagnostics.test and wiring-diagram.test
