@@ -76,13 +76,17 @@ export function nextContinuityState(current: ContinuityState = "normal"): Contin
 }
 
 /**
- * Pure helper for toggling wire diagnostic state.
+ * Pure helper for toggling wire diagnostic state while preserving existing metadata (label, notes).
  */
 export function toggleWireDiagnostic(
   currentDiagnostics: WireDiagnostics,
   wireId: string
 ): WireDiagnostic {
-  const current = currentDiagnostics[wireId]?.continuity || "normal";
+  const existing = currentDiagnostics[wireId];
+  const current = existing?.continuity || "normal";
   const next = nextContinuityState(current);
-  return { continuity: next };
+  return {
+    ...existing,
+    continuity: next,
+  };
 }
