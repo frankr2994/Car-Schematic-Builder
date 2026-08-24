@@ -33,7 +33,7 @@ import {
   createCircuitIntent,
 } from "../domain/projectCommands";
 import { CircuitRecipe } from "../domain/circuitRecipes";
-import { planCircuitInsertion } from "../domain/planCircuitInsertion";
+import { planCircuitInsertion, InsertionPlanResult } from "../domain/planCircuitInsertion";
 import { traceCircuit, CircuitTraceResult } from "../domain/traceCircuit";
 import { reconcileAssemblies } from "../domain/autoGrouping";
 import QuickAdd from "../wiring/QuickAdd";
@@ -200,19 +200,25 @@ export default function Home() {
 
   const handleInsertRecipe = useCallback((recipe: CircuitRecipe) => {
     if (!txManagerRef.current) return;
+    let insertionResult: InsertionPlanResult | undefined;
     const res = txManagerRef.current.execute((proj) => {
       const planRes = planCircuitInsertion(proj, recipe);
-      return planRes.ok ? { ok: true, project: planRes.project.project } : planRes;
+      if (planRes.ok) {
+        insertionResult = planRes.project;
+        return { ok: true, project: planRes.project.project };
+      }
+      return planRes;
     });
 
-    if (res.ok && project) {
-      // Trace the newly inserted load
-      const trace = traceCircuit(res.project, res.project.instances[res.project.instances.length - 1]?.id || "");
+    if (res.ok && insertionResult && insertionResult.circuitIntent.targets[0]) {
+      const target = insertionResult.circuitIntent.targets[0];
+      const trace = traceCircuit(res.project, target.instanceId, target.terminalKey);
       if (trace.status !== "incomplete") {
         setFocusCircuit(trace);
       }
+      setSelection({ kind: "component", id: target.instanceId });
     }
-  }, [project]);
+  }, []);
 
   const handleUpdateInstance = useCallback(
     (instanceId: string, patch: Partial<Omit<ComponentInstance, "id">>) => {

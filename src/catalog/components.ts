@@ -58,6 +58,19 @@ export const catalog: Record<string, ComponentDefinition> = {
       { key: "p4", roles: ["powerSource", "powerInput", "protectedPowerInput"], direction: "source", description: "Distribution Tap 4" }
     ]
   },
+  "alternator.12v": {
+    kind: "alternator.12v",
+    name: "12V Alternator",
+    category: "Power Sources",
+    description: "Internal-regulated 12V automotive alternator with battery charge post and ignition excitation terminal",
+    defaultZone: "Engine Bay",
+    searchAliases: ["alternator", "charging", "generator", "dynamo", "b+"],
+    terminals: [
+      { key: "b_plus", roles: ["powerSource", "powerInput"], direction: "source", description: "B+ Main Battery Charge Post" },
+      { key: "excite", roles: ["protectedPowerInput", "controlInput", "switchedPowerOutput"], direction: "target", description: "Ignition / Field Excitation Terminal" },
+      { key: "ground", roles: ["groundReturn"], direction: "source", description: "Alternator Case Ground Return" }
+    ]
+  },
   "fuse.blade": {
     kind: "fuse.blade",
     name: "Blade Fuse",
@@ -97,6 +110,20 @@ export const catalog: Record<string, ComponentDefinition> = {
       { key: "out", roles: ["switchedPowerOutput"], direction: "source", description: "Switched Power Output" }
     ]
   },
+  "switch.spdt": {
+    kind: "switch.spdt",
+    name: "SPDT Selector Switch",
+    category: "Switches",
+    description: "Single pole double throw selector switch (e.g. High/Low beam dimmer switch)",
+    defaultZone: "Dash",
+    defaultAssemblyKind: "switch_panel",
+    searchAliases: ["switch", "spdt", "selector", "dimmer", "hi lo", "beam switch"],
+    terminals: [
+      { key: "in", roles: ["protectedPowerInput"], direction: "target", description: "Common Power In" },
+      { key: "low", roles: ["switchedPowerOutput"], direction: "source", description: "Low Beam / Out 1" },
+      { key: "high", roles: ["switchedPowerOutput"], direction: "source", description: "High Beam / Out 2" }
+    ]
+  },
   "switch.ignition": {
     kind: "switch.ignition",
     name: "Ignition Switch",
@@ -105,7 +132,7 @@ export const catalog: Record<string, ComponentDefinition> = {
     defaultZone: "Dash",
     searchAliases: ["ignition", "key", "starter switch", "acc"],
     terminals: [
-      { key: "bat", roles: ["powerSource", "powerInput"], direction: "target", description: "Battery Feed (Constant 12V)" },
+      { key: "bat", roles: ["powerSource", "powerInput", "protectedPowerInput"], direction: "target", description: "Battery Feed (Constant 12V)" },
       { key: "acc", roles: ["switchedPowerOutput"], direction: "source", description: "Accessory Feed (Radio, Wipers)" },
       { key: "ign", roles: ["switchedPowerOutput"], direction: "source", description: "Ignition / Run Feed (Coil, Gauges)" },
       { key: "st", roles: ["switchedPowerOutput", "startOutput"], direction: "source", description: "Start Solenoid Trigger" }

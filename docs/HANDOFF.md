@@ -54,3 +54,10 @@
 - Reject conflicting representations during parse with migration conflict detection
 - Guard against unsupported future versions and reject both-source/both-target pairings
 - Add wiring-canvas interaction tests for connect, reconnect, delete
+
+## [2026-08-24T01:52:30.142Z] feat(wiring): add alternator, SPDT switches and circuit recipes
+
+- Add `alternator.12v` with B+/excite terminals and a starter/charging recipe
+- Introduce `switch.spdt` for multi-position toggles; update headlight dimmer logic
+- Implement port redirection in planCircuitInsertion to route wires through available terminals
+- Default unassigned components and wire endpoints to the System Overview sheet
