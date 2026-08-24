@@ -64,10 +64,12 @@ describe("Deterministic Vector SVG Print Engine & Sheet Planner", () => {
     expect(sheets.length).toBe(project.assemblies.length + 1);
     expect(sheets[0].subtitle).toContain("System Overview");
 
-    // Check detail sheet rendering
+    // Check detail sheet rendering and off-page references
     const detailSheet = sheets[1];
     expect(detailSheet.totalSheets).toBe(sheets.length);
+    expect(detailSheet.offPageRefs.size).toBeGreaterThan(0);
     const detailSvg = renderSchematicSvg(detailSheet, project);
     expect(detailSvg).toContain("<svg");
+    expect(detailSvg).toMatch(/To Sheet|From Sheet/);
   });
 });

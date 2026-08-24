@@ -69,4 +69,38 @@ describe("Auto-Grouping Engine", () => {
     expect(autoSwitchPanel?.members.map((m) => m.instanceId)).not.toContain("sw_1");
     expect(autoSwitchPanel?.members.map((m) => m.instanceId)).toContain("sw_2");
   });
+
+  it("preserves manual members within an auto assembly without duplicating assembly IDs", () => {
+    const withManualMemberInAutoAsm: ProjectDocument = {
+      ...testProject,
+      assemblies: [
+        {
+          id: "asm_auto_switch_panel_Dash",
+          name: "Dash Switch Panel",
+          kind: "switch_panel",
+          zone: "Dash",
+          origin: "auto",
+          autoGroupKey: "switch_panel_Dash",
+          members: [
+            { instanceId: "sw_1", assignmentSource: "manual" },
+            { instanceId: "sw_2", assignmentSource: "auto" },
+          ],
+        },
+      ],
+    };
+
+    const res = reconcileAssemblies(withManualMemberInAutoAsm);
+    expect(res.ok).toBe(true);
+    if (!res.ok) return;
+
+    // Check that there is only one assembly with id asm_auto_switch_panel_Dash
+    const matchingAsms = res.project.assemblies.filter((a) => a.id === "asm_auto_switch_panel_Dash");
+    expect(matchingAsms.length).toBe(1);
+
+    const panel = matchingAsms[0];
+    expect(panel.members).toEqual([
+      { instanceId: "sw_1", assignmentSource: "manual" },
+      { instanceId: "sw_2", assignmentSource: "auto" },
+    ]);
+  });
 });
