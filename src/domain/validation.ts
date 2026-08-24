@@ -23,10 +23,10 @@ export const TerminalRefSchema = z.object({
 
 export const WireSchema = z.object({
   id: z.string().min(1),
-  sourceInstance: z.string().min(1),
-  sourcePort: z.string().min(1),
-  targetInstance: z.string().min(1),
-  targetPort: z.string().min(1),
+  sourceInstance: z.string().min(1).optional(),
+  sourcePort: z.string().min(1).optional(),
+  targetInstance: z.string().min(1).optional(),
+  targetPort: z.string().min(1).optional(),
   a: TerminalRefSchema.optional(),
   b: TerminalRefSchema.optional(),
   color: z.string().optional(),
@@ -37,7 +37,14 @@ export const WireSchema = z.object({
   notes: z.string().optional(),
   lengthMm: z.number().optional(),
   routeOverride: z.array(z.object({ x: z.number(), y: z.number() })).optional(),
-});
+}).refine(
+  (data) => {
+    const hasLegacy = Boolean(data.sourceInstance && data.sourcePort && data.targetInstance && data.targetPort);
+    const hasDual = Boolean(data.a && data.b);
+    return hasLegacy || hasDual;
+  },
+  { message: "Wire must specify endpoints via source/target or a/b" }
+);
 
 export const ProjectDocumentSchema = z.object({
   id: z.string().min(1),
@@ -65,45 +72,81 @@ export const ProjectDocumentSchema = z.object({
     }
     wireIds.add(wire.id);
 
-    const sourceInst = data.instances.find((i) => i.id === wire.sourceInstance);
-    const targetInst = data.instances.find((i) => i.id === wire.targetInstance);
+    // Reject conflicting endpoint definitions
+    if (wire.sourceInstance && wire.a && wire.sourceInstance !== wire.a.instanceId) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: `Conflicting source instance between legacy '${wire.sourceInstance}' and dual endpoint '${wire.a.instanceId}' on wire '${wire.id}'`,
+      });
+    }
+    if (wire.sourcePort && wire.a && wire.sourcePort !== wire.a.terminalKey) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: `Conflicting source port between legacy '${wire.sourcePort}' and dual endpoint '${wire.a.terminalKey}' on wire '${wire.id}'`,
+      });
+    }
+    if (wire.targetInstance && wire.b && wire.targetInstance !== wire.b.instanceId) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: `Conflicting target instance between legacy '${wire.targetInstance}' and dual endpoint '${wire.b.instanceId}' on wire '${wire.id}'`,
+      });
+    }
+    if (wire.targetPort && wire.b && wire.targetPort !== wire.b.terminalKey) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: `Conflicting target port between legacy '${wire.targetPort}' and dual endpoint '${wire.b.terminalKey}' on wire '${wire.id}'`,
+      });
+    }
+
+    const sourceInstanceId = wire.sourceInstance || wire.a?.instanceId;
+    const sourcePortKey = wire.sourcePort || wire.a?.terminalKey;
+    const targetInstanceId = wire.targetInstance || wire.b?.instanceId;
+    const targetPortKey = wire.targetPort || wire.b?.terminalKey;
+
+    if (!sourceInstanceId || !sourcePortKey || !targetInstanceId || !targetPortKey) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: `Wire endpoints incomplete for wire: ${wire.id}` });
+      continue;
+    }
+
+    const sourceInst = data.instances.find((i) => i.id === sourceInstanceId);
+    const targetInst = data.instances.find((i) => i.id === targetInstanceId);
 
     if (!sourceInst) {
-      ctx.addIssue({ code: z.ZodIssueCode.custom, message: `Wire source instance not found: ${wire.sourceInstance}` });
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: `Wire source instance not found: ${sourceInstanceId}` });
       continue;
     }
     if (!targetInst) {
-      ctx.addIssue({ code: z.ZodIssueCode.custom, message: `Wire target instance not found: ${wire.targetInstance}` });
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: `Wire target instance not found: ${targetInstanceId}` });
       continue;
     }
 
     const sourceCat = catalog[sourceInst.kind];
     const targetCat = catalog[targetInst.kind];
 
-    const sourcePortDef = sourceCat?.terminals.find((t) => t.key === wire.sourcePort);
-    const targetPortDef = targetCat?.terminals.find((t) => t.key === wire.targetPort);
+    const sourcePortDef = sourceCat?.terminals.find((t) => t.key === sourcePortKey);
+    const targetPortDef = targetCat?.terminals.find((t) => t.key === targetPortKey);
 
     if (!sourcePortDef) {
-      ctx.addIssue({ code: z.ZodIssueCode.custom, message: `Wire source port not found: ${wire.sourcePort}` });
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: `Wire source port not found: ${sourcePortKey}` });
     } else if (sourcePortDef.direction !== "source") {
-      ctx.addIssue({ code: z.ZodIssueCode.custom, message: `Wire source port must be a source: ${wire.sourcePort}` });
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: `Wire source port must be a source: ${sourcePortKey}` });
     }
 
     if (!targetPortDef) {
-      ctx.addIssue({ code: z.ZodIssueCode.custom, message: `Wire target port not found: ${wire.targetPort}` });
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: `Wire target port not found: ${targetPortKey}` });
     } else if (targetPortDef.direction !== "target") {
-      ctx.addIssue({ code: z.ZodIssueCode.custom, message: `Wire target port must be a target: ${wire.targetPort}` });
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: `Wire target port must be a target: ${targetPortKey}` });
     }
 
     if (sourcePortDef && targetPortDef) {
       const isDead = isDeadShort(sourcePortDef.roles, targetPortDef.roles);
       if (isDead) {
-        ctx.addIssue({ code: z.ZodIssueCode.custom, message: `Short circuit detected between ${wire.sourcePort} and ${wire.targetPort}` });
+        ctx.addIssue({ code: z.ZodIssueCode.custom, message: `Short circuit detected between ${sourcePortKey} and ${targetPortKey}` });
       }
 
       const isCompatible = areRolesCompatible(sourcePortDef.roles, targetPortDef.roles);
       if (!isCompatible) {
-        ctx.addIssue({ code: z.ZodIssueCode.custom, message: `Roles do not intersect between ${wire.sourcePort} and ${wire.targetPort}` });
+        ctx.addIssue({ code: z.ZodIssueCode.custom, message: `Roles do not intersect between ${sourcePortKey} and ${targetPortKey}` });
       }
     }
   }

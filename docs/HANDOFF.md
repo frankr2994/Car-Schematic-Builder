@@ -29,3 +29,28 @@
 
 - Spread the existing wire object into toggleWireDiagnostic so non-continuity fields (label, notes) are not dropped
 - Add tests verifying metadata is retained through multiple toggles in both wiring-diagnostics.test and wiring-diagram.test
+
+## [2026-08-16T05:23:55.000Z] Phase 1: Interactive Canvas Authoring & Connection Validation
+
+- Centralize domain editing commands and validation rules in `src/domain/connectionRules.ts` and `src/domain/projectCommands.ts` with structured `EditResult` returns.
+- Add schema migration support in `src/domain/migrations.ts` supporting schema versions 1.0 and 2.0 with undirected dual endpoints (`a` and `b`), `gaugeAwg`, `colorCode`, `label`, and `notes`.
+- Expand catalog in `src/catalog/components.ts` with multi-terminal devices (5-Pin SPDT Relay, 4-Pin NO Relay, Ignition Switch, Turn Flasher, Starter Motor, Voltmeter Gauge, 3-Way Splice Junction) and the `relay_headlight` template.
+- Enable interactive handle-to-handle wire creation, reconnection, cascade deletion, and drag-and-drop placement in `WiringCanvas.tsx` and `WiringDiagram.tsx`.
+- Add `Palette.tsx` library sidebar and `Inspector.tsx` property editor for components and wires.
+- Integrate full workbench UI into `src/app/page.tsx`.
+- Comprehensive test coverage in `connectionRules.test.ts`, `projectCommands.test.ts`, `migrations.test.ts`, `palette-and-inspector.test.tsx`, and existing suites.
+
+## [2026-08-16T05:35:10.000Z] Fixes: Unsupported schema version guard, endpoint conflict rejection & canvas integration tests
+
+- Reject unsupported future schema versions in `storage.load` and `migrateProject` to prevent silent downgrades.
+- Validate and reject conflicting endpoint representations between legacy (`sourceInstance`/`targetInstance`) and dual (`a`/`b`) fields across `validation.ts` and `migrations.ts`.
+- Add comprehensive `WiringDiagram` integration test suite in `wiring-canvas-interaction.test.tsx` exercising `isValidConnection`, `onConnect`, `onReconnect`, `onNodesDelete`, `onEdgesDelete`, and palette `drop` events.
+
+## [2026-08-24T01:12:56.969Z] Auto-committed baseline
+
+- Migrate project documents to a unified v2.0 representation
+- Add lengthMm, routeOverride and preserve physical attributes (colorCode, gaugeAwg)
+- Enforce either legacy or dual endpoint definitions via cross-field validation
+- Reject conflicting representations during parse with migration conflict detection
+- Guard against unsupported future versions and reject both-source/both-target pairings
+- Add wiring-canvas interaction tests for connect, reconnect, delete

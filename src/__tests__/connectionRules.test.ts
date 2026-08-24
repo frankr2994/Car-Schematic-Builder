@@ -52,6 +52,52 @@ describe("Connection Rules & Electrical Compatibility", () => {
     expect(result.normalized?.sourceInstance).toBe(batt.id);
   });
 
+  it("rejects connection between two target terminals (target-to-target)", () => {
+    // Both switch1.in and switch2.in are targets with role protectedPowerInput
+    const proj = {
+      ...sampleProject,
+      instances: [
+        ...sampleProject.instances,
+        { id: "sw2", kind: "switch.toggle", name: "Switch 2", zone: "Dash" },
+      ],
+      wires: [],
+    };
+    const sw1 = proj.instances.find((i) => i.kind === "switch.toggle" && i.id !== "sw2")!;
+
+    const res = validateConnectionRules(proj, {
+      sourceInstance: sw1.id,
+      sourcePort: "in",
+      targetInstance: "sw2",
+      targetPort: "in",
+    });
+
+    expect(res.valid).toBe(false);
+    expect(res.reason).toContain("cannot connect two target terminals");
+  });
+
+  it("rejects connection between two source terminals (source-to-source)", () => {
+    // Both batt.pos and batt2.pos are sources with role powerSource
+    const proj = {
+      ...sampleProject,
+      instances: [
+        ...sampleProject.instances,
+        { id: "batt2", kind: "battery.12v", name: "Battery 2", zone: "Engine Bay" },
+      ],
+      wires: [],
+    };
+    const batt1 = proj.instances.find((i) => i.kind === "battery.12v" && i.id !== "batt2")!;
+
+    const res = validateConnectionRules(proj, {
+      sourceInstance: batt1.id,
+      sourcePort: "pos",
+      targetInstance: "batt2",
+      targetPort: "pos",
+    });
+
+    expect(res.valid).toBe(false);
+    expect(res.reason).toContain("cannot connect two source terminals");
+  });
+
   it("rejects connection to missing instances or ports", () => {
     const batt = sampleProject.instances[0];
 

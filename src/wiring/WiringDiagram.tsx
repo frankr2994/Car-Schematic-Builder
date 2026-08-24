@@ -30,7 +30,7 @@ import {
   deleteInstance,
   addInstance,
 } from "../domain/projectCommands";
-import WiringCanvas from "./WiringCanvas";
+import { WiringCanvas } from "./WiringCanvas";
 import "./wiring.css";
 
 function FlowController({

@@ -11,28 +11,25 @@ export const storage = {
       if (!saved) return null;
       
       const parsed = JSON.parse(saved);
-      
-      // Attempt direct parse first
-      const validation = parseProject(parsed);
-      if (validation.success) {
-        return validation.data;
+      if (!parsed || typeof parsed !== "object") return null;
+
+      // Reject unsupported schema versions before attempting migration to prevent silent downgrade
+      if (parsed.schemaVersion && parsed.schemaVersion !== "1.0" && parsed.schemaVersion !== "2.0") {
+        console.warn(`Unsupported schema version: ${parsed.schemaVersion}, wiping`);
+        return null;
       }
-      
-      console.warn("Invalid storage data, attempting to repair...", validation.errors);
-      
-      // Attempt migration / repair
+
+      // Apply migration to normalize and promote documents to schema 2.0 with full dual endpoints
       try {
         const migrated = migrateProject(parsed);
-        const migratedValidation = parseProject(migrated);
-        if (migratedValidation.success) {
-          return migratedValidation.data;
+        const validation = parseProject(migrated);
+        if (validation.success) {
+          return validation.data;
         }
-      } catch {
-        // Repair unsuccessful
-      }
-      
-      if (parsed.schemaVersion && parsed.schemaVersion !== "1.0" && parsed.schemaVersion !== "2.0") {
-         console.warn("Schema version mismatch, wiping");
+        console.warn("Invalid storage data, attempting to repair...", validation.errors);
+      } catch (err) {
+        const rawValidation = parseProject(parsed);
+        console.warn("Invalid storage data, attempting to repair...", rawValidation.success ? [] : rawValidation.errors);
       }
       
       return null;

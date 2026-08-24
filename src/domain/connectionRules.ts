@@ -185,7 +185,22 @@ export function validateConnectionRules(
     return { valid: false, reason: `Incompatible terminal roles between '${portAKey}' [${portA.roles.join(",")}] and '${portBKey}' [${portB.roles.join(",")}]` };
   }
 
-  // 8. Determine normalized source -> target direction for consistent storage and rendering
+  // 8. Direction validation: must connect one source terminal to one target terminal
+  if (portA.direction === "source" && portB.direction === "source") {
+    return {
+      valid: false,
+      reason: `Invalid terminal direction: cannot connect two source terminals ('${portAKey}' and '${portBKey}') together`,
+    };
+  }
+
+  if (portA.direction === "target" && portB.direction === "target") {
+    return {
+      valid: false,
+      reason: `Invalid terminal direction: cannot connect two target terminals ('${portAKey}' and '${portBKey}') together`,
+    };
+  }
+
+  // 9. Determine normalized source -> target direction for consistent storage and rendering
   let normalized = {
     sourceInstance: instAId,
     sourcePort: portAKey,
