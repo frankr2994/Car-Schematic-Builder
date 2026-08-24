@@ -1,6 +1,7 @@
 "use client";
 import React, { useState, useMemo } from "react";
-import { catalog, ComponentDefinition } from "../catalog/components";
+import { catalog } from "../catalog/components";
+
 
 export interface PaletteProps {
   onAddComponent: (kind: string) => void;

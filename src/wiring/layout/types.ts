@@ -11,6 +11,9 @@ export interface LayoutNodeInput {
   width: number;
   height: number;
   ports: LayoutPortInput[];
+  children?: LayoutNodeInput[];
+  isCompound?: boolean;
+  parentId?: string;
 }
 
 export interface LayoutConnectionInput {
@@ -37,9 +40,12 @@ export interface PositionedNode {
   y: number;
   width: number;
   height: number;
+  parentId?: string;
+  isCompound?: boolean;
   ports?: Record<string, PositionedPort>;
 }
 
 export interface WiringLayoutResult {
   nodes: Record<string, PositionedNode>;
 }
+

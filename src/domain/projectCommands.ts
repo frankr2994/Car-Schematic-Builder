@@ -1,6 +1,16 @@
 import { catalog } from "../catalog/components";
 import { validateConnectionRules, ValidateCandidateParams } from "./connectionRules";
-import { ComponentInstance, ProjectDocument, Wire } from "./types";
+import {
+  ComponentInstance,
+  ProjectDocument,
+  Wire,
+  Assembly,
+  AssemblyMember,
+  CircuitIntent,
+  ProjectMetadata,
+  AssignmentSource,
+} from "./types";
+import { parseProject } from "./validation";
 
 export interface DomainIssue {
   code: string;
@@ -74,12 +84,22 @@ export function connectTerminals(
     notes: candidate.notes,
   };
 
+  const updatedProject: ProjectDocument = {
+    ...project,
+    wires: [...project.wires, newWire],
+  };
+
+  const validated = parseProject(updatedProject);
+  if (!validated.success) {
+    return {
+      ok: false,
+      issues: validated.errors.map((e) => ({ code: e.code, message: e.message })),
+    };
+  }
+
   return {
     ok: true,
-    project: {
-      ...project,
-      wires: [...project.wires, newWire],
-    },
+    project: validated.data,
   };
 }
 
@@ -131,12 +151,22 @@ export function reconnectWire(
     };
   });
 
+  const updatedProject: ProjectDocument = {
+    ...project,
+    wires: updatedWires,
+  };
+
+  const validated = parseProject(updatedProject);
+  if (!validated.success) {
+    return {
+      ok: false,
+      issues: validated.errors.map((e) => ({ code: e.code, message: e.message })),
+    };
+  }
+
   return {
     ok: true,
-    project: {
-      ...project,
-      wires: updatedWires,
-    },
+    project: validated.data,
   };
 }
 
@@ -162,7 +192,8 @@ export function deleteWire(project: ProjectDocument, wireId: string): EditResult
 }
 
 /**
- * Deletes a component instance and cascade-deletes all attached wires and layout overrides.
+ * Deletes a component instance and cascade-deletes all attached wires, layout overrides,
+ * assembly memberships (cleaning up empty auto assemblies), and circuit intent references.
  */
 export function deleteInstance(project: ProjectDocument, instanceId: string): EditResult {
   const exists = project.instances.some((i) => i.id === instanceId);
@@ -180,12 +211,40 @@ export function deleteInstance(project: ProjectDocument, instanceId: string): Ed
   const remainingOverrides = { ...project.layoutOverrides };
   delete remainingOverrides[instanceId];
 
+  // Clean up assemblies: remove instance from members
+  const updatedAssemblies: Assembly[] = [];
+  for (const asm of project.assemblies) {
+    const updatedMembers = asm.members.filter((m) => m.instanceId !== instanceId);
+    // If it's an auto assembly and now empty, omit it; if manual, keep it even if empty
+    if (updatedMembers.length === 0 && asm.origin === "auto") {
+      continue;
+    }
+    updatedAssemblies.push({
+      ...asm,
+      members: updatedMembers,
+    });
+  }
+
+  // Clean up circuit intents: remove targets referencing this instance
+  const updatedCircuits: CircuitIntent[] = [];
+  for (const circuit of project.circuits) {
+    const updatedTargets = circuit.targets.filter((t) => t.instanceId !== instanceId);
+    if (updatedTargets.length > 0) {
+      updatedCircuits.push({
+        ...circuit,
+        targets: updatedTargets,
+      });
+    }
+  }
+
   return {
     ok: true,
     project: {
       ...project,
       instances: filteredInstances,
       wires: filteredWires,
+      assemblies: updatedAssemblies,
+      circuits: updatedCircuits,
       layoutOverrides: remainingOverrides,
     },
   };
@@ -370,3 +429,293 @@ export function removeLayoutOverride(
     },
   };
 }
+
+/**
+ * Creates a new physical assembly.
+ */
+export function createAssembly(
+  project: ProjectDocument,
+  assembly: Assembly
+): EditResult {
+  if (project.assemblies.some((a) => a.id === assembly.id)) {
+    return {
+      ok: false,
+      issues: [{ code: "DUPLICATE_ASSEMBLY_ID", message: `Assembly ID '${assembly.id}' already exists` }],
+    };
+  }
+
+  const memberIds = new Set(assembly.members.map((m) => m.instanceId));
+  // Remove these members from any other assembly to maintain unique membership
+  const updatedExistingAssemblies = project.assemblies.map((a) => ({
+    ...a,
+    members: a.members.filter((m) => !memberIds.has(m.instanceId)),
+  }));
+
+  const updatedProject: ProjectDocument = {
+    ...project,
+    assemblies: [...updatedExistingAssemblies, assembly],
+  };
+
+  const validation = parseProject(updatedProject);
+  if (!validation.success) {
+    return {
+      ok: false,
+      issues: validation.errors.map((e) => ({ code: e.code, message: e.message })),
+    };
+  }
+
+  return { ok: true, project: validation.data };
+}
+
+/**
+ * Updates an assembly's properties.
+ */
+export function updateAssembly(
+  project: ProjectDocument,
+  assemblyId: string,
+  patch: Partial<Omit<Assembly, "id">>
+): EditResult {
+  const exists = project.assemblies.some((a) => a.id === assemblyId);
+  if (!exists) {
+    return {
+      ok: false,
+      issues: [{ code: "ASSEMBLY_NOT_FOUND", message: `Assembly '${assemblyId}' not found` }],
+    };
+  }
+
+  const updatedProject: ProjectDocument = {
+    ...project,
+    assemblies: project.assemblies.map((a) => (a.id === assemblyId ? { ...a, ...patch } : a)),
+  };
+
+  const validation = parseProject(updatedProject);
+  if (!validation.success) {
+    return {
+      ok: false,
+      issues: validation.errors.map((e) => ({ code: e.code, message: e.message })),
+    };
+  }
+
+  return { ok: true, project: validation.data };
+}
+
+/**
+ * Deletes an assembly without deleting member instances.
+ */
+export function deleteAssembly(project: ProjectDocument, assemblyId: string): EditResult {
+  const exists = project.assemblies.some((a) => a.id === assemblyId);
+  if (!exists) {
+    return {
+      ok: false,
+      issues: [{ code: "ASSEMBLY_NOT_FOUND", message: `Assembly '${assemblyId}' not found` }],
+    };
+  }
+
+  return {
+    ok: true,
+    project: {
+      ...project,
+      assemblies: project.assemblies.filter((a) => a.id !== assemblyId),
+    },
+  };
+}
+
+/**
+ * Assigns a component instance to an assembly.
+ */
+export function assignAssemblyMember(
+  project: ProjectDocument,
+  assemblyId: string,
+  instanceId: string,
+  source: AssignmentSource = "manual"
+): EditResult {
+  const assembly = project.assemblies.find((a) => a.id === assemblyId);
+  if (!assembly) {
+    return {
+      ok: false,
+      issues: [{ code: "ASSEMBLY_NOT_FOUND", message: `Assembly '${assemblyId}' not found` }],
+    };
+  }
+  const instExists = project.instances.some((i) => i.id === instanceId);
+  if (!instExists) {
+    return {
+      ok: false,
+      issues: [{ code: "INSTANCE_NOT_FOUND", message: `Instance '${instanceId}' not found` }],
+    };
+  }
+
+  // Remove from all other assemblies
+  const cleanedAssemblies = project.assemblies.map((a) => {
+    if (a.id === assemblyId) {
+      const existingMember = a.members.find((m) => m.instanceId === instanceId);
+      const newMembers: AssemblyMember[] = existingMember
+        ? a.members.map((m) => (m.instanceId === instanceId ? { ...m, assignmentSource: source } : m))
+        : [...a.members, { instanceId, assignmentSource: source }];
+      return {
+        ...a,
+        members: newMembers,
+      };
+    }
+    return {
+      ...a,
+      members: a.members.filter((m) => m.instanceId !== instanceId),
+    };
+  });
+
+  return {
+    ok: true,
+    project: {
+      ...project,
+      assemblies: cleanedAssemblies,
+    },
+  };
+}
+
+/**
+ * Removes a component instance from its assembly.
+ */
+export function removeAssemblyMember(project: ProjectDocument, instanceId: string): EditResult {
+  return {
+    ok: true,
+    project: {
+      ...project,
+      assemblies: project.assemblies.map((a) => ({
+        ...a,
+        members: a.members.filter((m) => m.instanceId !== instanceId),
+      })),
+    },
+  };
+}
+
+/**
+ * Creates a circuit intent.
+ */
+export function createCircuitIntent(
+  project: ProjectDocument,
+  circuit: CircuitIntent
+): EditResult {
+  if (project.circuits.some((c) => c.id === circuit.id)) {
+    return {
+      ok: false,
+      issues: [{ code: "DUPLICATE_CIRCUIT_ID", message: `Circuit ID '${circuit.id}' already exists` }],
+    };
+  }
+
+  const updatedProject: ProjectDocument = {
+    ...project,
+    circuits: [...project.circuits, circuit],
+  };
+
+  const validation = parseProject(updatedProject);
+  if (!validation.success) {
+    return {
+      ok: false,
+      issues: validation.errors.map((e) => ({ code: e.code, message: e.message })),
+    };
+  }
+
+  return { ok: true, project: validation.data };
+}
+
+/**
+ * Updates a circuit intent.
+ */
+export function updateCircuitIntent(
+  project: ProjectDocument,
+  circuitId: string,
+  patch: Partial<Omit<CircuitIntent, "id">>
+): EditResult {
+  const exists = project.circuits.some((c) => c.id === circuitId);
+  if (!exists) {
+    return {
+      ok: false,
+      issues: [{ code: "CIRCUIT_NOT_FOUND", message: `Circuit '${circuitId}' not found` }],
+    };
+  }
+
+  const updatedProject: ProjectDocument = {
+    ...project,
+    circuits: project.circuits.map((c) => (c.id === circuitId ? { ...c, ...patch } : c)),
+  };
+
+  const validation = parseProject(updatedProject);
+  if (!validation.success) {
+    return {
+      ok: false,
+      issues: validation.errors.map((e) => ({ code: e.code, message: e.message })),
+    };
+  }
+
+  return { ok: true, project: validation.data };
+}
+
+/**
+ * Deletes a circuit intent.
+ */
+export function deleteCircuitIntent(project: ProjectDocument, circuitId: string): EditResult {
+  const exists = project.circuits.some((c) => c.id === circuitId);
+  if (!exists) {
+    return {
+      ok: false,
+      issues: [{ code: "CIRCUIT_NOT_FOUND", message: `Circuit '${circuitId}' not found` }],
+    };
+  }
+
+  return {
+    ok: true,
+    project: {
+      ...project,
+      circuits: project.circuits.filter((c) => c.id !== circuitId),
+    },
+  };
+}
+
+/**
+ * Updates project metadata.
+ */
+export function updateProjectMetadata(
+  project: ProjectDocument,
+  patch: Partial<ProjectMetadata>
+): EditResult {
+  return {
+    ok: true,
+    project: {
+      ...project,
+      metadata: {
+        ...project.metadata,
+        ...patch,
+      },
+    },
+  };
+}
+
+export type DomainCommandFn = (project: ProjectDocument) => EditResult;
+
+/**
+ * Applies a batch of domain commands atomically.
+ * If any command fails, rolls back completely and returns the issue.
+ */
+export function applyBatch(
+  project: ProjectDocument,
+  commands: DomainCommandFn[]
+): EditResult {
+  let current = project;
+  for (const cmd of commands) {
+    const res = cmd(current);
+    if (!res.ok) {
+      return res;
+    }
+    current = res.project;
+  }
+
+  const validation = parseProject(current);
+  if (!validation.success) {
+    return {
+      ok: false,
+      issues: validation.errors.map((e) => ({ code: e.code, message: e.message })),
+    };
+  }
+
+  return { ok: true, project: validation.data };
+}
+

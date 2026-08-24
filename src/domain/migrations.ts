@@ -1,10 +1,23 @@
-import { ProjectDocument, Wire, ComponentInstance, LayoutOverride, RoutePoint } from "./types";
+import {
+  ProjectDocument,
+  Wire,
+  ComponentInstance,
+  LayoutOverride,
+  RoutePoint,
+  Assembly,
+  AssemblyMember,
+  AssemblyKind,
+  CircuitIntent,
+  ProjectMetadata,
+  AssignmentSource,
+} from "./types";
 import { catalog } from "../catalog/components";
 
 /**
- * Migrates and normalizes any legacy or versioned project document into the current schema (v2.0).
- * Rejects unsupported future schema versions and conflicting endpoint representations.
- * Preserves dual endpoints, routing overrides, physical length, gauges, and colors.
+ * Migrates and normalizes any legacy or versioned project document (v1.0, v2.0, raw)
+ * into the canonical Schema v3.0.
+ * Rejects unsupported schema versions and conflicting endpoint representations.
+ * Preserves dual endpoints, routing overrides, physical length, gauges, colors, and layout overrides.
  */
 export function migrateProject(data: unknown): ProjectDocument {
   if (!data || typeof data !== "object") {
@@ -14,14 +27,37 @@ export function migrateProject(data: unknown): ProjectDocument {
   const raw = data as Record<string, unknown>;
 
   // Reject unsupported schema versions
-  if (raw.schemaVersion && raw.schemaVersion !== "1.0" && raw.schemaVersion !== "2.0") {
+  if (
+    raw.schemaVersion &&
+    raw.schemaVersion !== "1.0" &&
+    raw.schemaVersion !== "2.0" &&
+    raw.schemaVersion !== "3.0"
+  ) {
     throw new Error(`Unsupported schema version '${raw.schemaVersion}', cannot migrate`);
   }
 
-  const id = typeof raw.id === "string" && raw.id.length > 0 ? raw.id : `project_${crypto.randomUUID().slice(0, 8)}`;
-  // Upgraded/migrated documents are promoted to schema version 2.0
-  const schemaVersion = "2.0";
-  const ruleSetVersion = typeof raw.ruleSetVersion === "string" ? raw.ruleSetVersion : "1.0";
+  const id =
+    typeof raw.id === "string" && raw.id.length > 0
+      ? raw.id
+      : `project_${crypto.randomUUID().slice(0, 8)}`;
+
+  // Upgraded/migrated documents are promoted to schema version 3.0
+  const schemaVersion = "3.0" as const;
+  const ruleSetVersion =
+    typeof raw.ruleSetVersion === "string" ? raw.ruleSetVersion : "1.0";
+
+  // Migrate metadata
+  const rawMeta =
+    raw.metadata && typeof raw.metadata === "object"
+      ? (raw.metadata as Record<string, unknown>)
+      : undefined;
+
+  const metadata: ProjectMetadata = {
+    name: typeof rawMeta?.name === "string" ? rawMeta.name : "Vehicle Schematic",
+    author: typeof rawMeta?.author === "string" ? rawMeta.author : undefined,
+    date: typeof rawMeta?.date === "string" ? rawMeta.date : undefined,
+    revision: typeof rawMeta?.revision === "string" ? rawMeta.revision : undefined,
+  };
 
   // Migrate instances
   const rawInstances = Array.isArray(raw.instances) ? raw.instances : [];
@@ -30,7 +66,8 @@ export function migrateProject(data: unknown): ProjectDocument {
   for (const item of rawInstances) {
     if (item && typeof item === "object") {
       const inst = item as Record<string, unknown>;
-      const instId = typeof inst.id === "string" ? inst.id : `inst_${crypto.randomUUID().slice(0, 8)}`;
+      const instId =
+        typeof inst.id === "string" ? inst.id : `inst_${crypto.randomUUID().slice(0, 8)}`;
       const kind = typeof inst.kind === "string" ? inst.kind : "lamp.incandescent";
       const catDef = catalog[kind];
       const name = typeof inst.name === "string" ? inst.name : catDef?.name || kind;
@@ -45,6 +82,8 @@ export function migrateProject(data: unknown): ProjectDocument {
     }
   }
 
+  const instanceIdSet = new Set(instances.map((i) => i.id));
+
   // Migrate wires
   const rawWires = Array.isArray(raw.wires) ? raw.wires : [];
   const wires: Wire[] = [];
@@ -52,15 +91,16 @@ export function migrateProject(data: unknown): ProjectDocument {
   for (const item of rawWires) {
     if (item && typeof item === "object") {
       const w = item as Record<string, unknown>;
-      const wireId = typeof w.id === "string" ? w.id : `wire_${crypto.randomUUID().slice(0, 8)}`;
+      const wireId =
+        typeof w.id === "string" ? w.id : `wire_${crypto.randomUUID().slice(0, 8)}`;
 
       let sourceInstance = typeof w.sourceInstance === "string" ? w.sourceInstance : "";
       let sourcePort = typeof w.sourcePort === "string" ? w.sourcePort : "";
       let targetInstance = typeof w.targetInstance === "string" ? w.targetInstance : "";
       let targetPort = typeof w.targetPort === "string" ? w.targetPort : "";
 
-      const a = (w.a && typeof w.a === "object") ? (w.a as Record<string, unknown>) : undefined;
-      const b = (w.b && typeof w.b === "object") ? (w.b as Record<string, unknown>) : undefined;
+      const a = w.a && typeof w.a === "object" ? (w.a as Record<string, unknown>) : undefined;
+      const b = w.b && typeof w.b === "object" ? (w.b as Record<string, unknown>) : undefined;
 
       const aInst = typeof a?.instanceId === "string" ? a.instanceId : undefined;
       const aPort = typeof a?.terminalKey === "string" ? a.terminalKey : undefined;
@@ -69,16 +109,24 @@ export function migrateProject(data: unknown): ProjectDocument {
 
       // Check for conflicts between legacy and dual endpoint representations
       if (sourceInstance && aInst && sourceInstance !== aInst) {
-        throw new Error(`Conflicting source instance between legacy '${sourceInstance}' and dual endpoint '${aInst}' on wire '${wireId}'`);
+        throw new Error(
+          `Conflicting source instance between legacy '${sourceInstance}' and dual endpoint '${aInst}' on wire '${wireId}'`
+        );
       }
       if (sourcePort && aPort && sourcePort !== aPort) {
-        throw new Error(`Conflicting source port between legacy '${sourcePort}' and dual endpoint '${aPort}' on wire '${wireId}'`);
+        throw new Error(
+          `Conflicting source port between legacy '${sourcePort}' and dual endpoint '${aPort}' on wire '${wireId}'`
+        );
       }
       if (targetInstance && bInst && targetInstance !== bInst) {
-        throw new Error(`Conflicting target instance between legacy '${targetInstance}' and dual endpoint '${bInst}' on wire '${wireId}'`);
+        throw new Error(
+          `Conflicting target instance between legacy '${targetInstance}' and dual endpoint '${bInst}' on wire '${wireId}'`
+        );
       }
       if (targetPort && bPort && targetPort !== bPort) {
-        throw new Error(`Conflicting target port between legacy '${targetPort}' and dual endpoint '${bPort}' on wire '${wireId}'`);
+        throw new Error(
+          `Conflicting target port between legacy '${targetPort}' and dual endpoint '${bPort}' on wire '${wireId}'`
+        );
       }
 
       // Consistently populate endpoints
@@ -87,10 +135,21 @@ export function migrateProject(data: unknown): ProjectDocument {
       targetInstance = targetInstance || bInst || "";
       targetPort = targetPort || bPort || "";
 
-      const color = typeof w.color === "string" ? w.color : typeof w.colorCode === "string" ? w.colorCode : "black";
+      const color =
+        typeof w.color === "string"
+          ? w.color
+          : typeof w.colorCode === "string"
+          ? w.colorCode
+          : "black";
       const colorCode = typeof w.colorCode === "string" ? w.colorCode : color;
-      const gauge = typeof w.gauge === "string" ? w.gauge : typeof w.gaugeAwg === "number" ? String(w.gaugeAwg) : "14";
-      const gaugeAwg = typeof w.gaugeAwg === "number" ? w.gaugeAwg : parseInt(gauge, 10) || 14;
+      const gauge =
+        typeof w.gauge === "string"
+          ? w.gauge
+          : typeof w.gaugeAwg === "number"
+          ? String(w.gaugeAwg)
+          : "14";
+      const gaugeAwg =
+        typeof w.gaugeAwg === "number" ? w.gaugeAwg : parseInt(gauge, 10) || 14;
       const label = typeof w.label === "string" ? w.label : undefined;
       const notes = typeof w.notes === "string" ? w.notes : undefined;
       const lengthMm = typeof w.lengthMm === "number" ? w.lengthMm : undefined;
@@ -125,14 +184,137 @@ export function migrateProject(data: unknown): ProjectDocument {
     }
   }
 
+  // Migrate assemblies
+  const rawAssemblies = Array.isArray(raw.assemblies) ? raw.assemblies : [];
+  const assemblies: Assembly[] = [];
+
+  for (const item of rawAssemblies) {
+    if (item && typeof item === "object") {
+      const a = item as Record<string, unknown>;
+      const asmId =
+        typeof a.id === "string" ? a.id : `asm_${crypto.randomUUID().slice(0, 8)}`;
+      const name = typeof a.name === "string" ? a.name : "Assembly";
+      const kind = (
+        typeof a.kind === "string" &&
+        ["switch_panel", "fuse_relay_box", "ground_bus", "connector_group", "custom"].includes(
+          a.kind
+        )
+          ? a.kind
+          : "custom"
+      ) as AssemblyKind;
+      const zone = typeof a.zone === "string" ? a.zone : "Dash";
+      const origin = (
+        typeof a.origin === "string" && ["auto", "manual"].includes(a.origin)
+          ? a.origin
+          : "auto"
+      ) as AssignmentSource;
+      const autoGroupKey = typeof a.autoGroupKey === "string" ? a.autoGroupKey : undefined;
+      const collapsed = typeof a.collapsed === "boolean" ? a.collapsed : undefined;
+
+      const members: AssemblyMember[] = [];
+      if (Array.isArray(a.members)) {
+        for (const m of a.members) {
+          if (m && typeof m === "object") {
+            const memberObj = m as Record<string, unknown>;
+            if (typeof memberObj.instanceId === "string" && instanceIdSet.has(memberObj.instanceId)) {
+              members.push({
+                instanceId: memberObj.instanceId,
+                assignmentSource: (
+                  typeof memberObj.assignmentSource === "string" &&
+                  ["auto", "manual"].includes(memberObj.assignmentSource)
+                    ? memberObj.assignmentSource
+                    : origin
+                ) as AssignmentSource,
+              });
+            }
+          }
+        }
+      } else if (Array.isArray(a.memberInstanceIds)) {
+        for (const instId of a.memberInstanceIds) {
+          if (typeof instId === "string" && instanceIdSet.has(instId)) {
+            members.push({
+              instanceId: instId,
+              assignmentSource: origin,
+            });
+          }
+        }
+      }
+
+      assemblies.push({
+        id: asmId,
+        name,
+        kind,
+        zone,
+        origin,
+        autoGroupKey,
+        members,
+        collapsed,
+      });
+    }
+  }
+
+  // Migrate circuits
+  const rawCircuits = Array.isArray(raw.circuits) ? raw.circuits : [];
+  const circuits: CircuitIntent[] = [];
+
+  for (const item of rawCircuits) {
+    if (item && typeof item === "object") {
+      const c = item as Record<string, unknown>;
+      const cId =
+        typeof c.id === "string" ? c.id : `circuit_${crypto.randomUUID().slice(0, 8)}`;
+      const name = typeof c.name === "string" ? c.name : "Circuit";
+      const description = typeof c.description === "string" ? c.description : undefined;
+      const colorHint = typeof c.colorHint === "string" ? c.colorHint : undefined;
+      const recipeId = typeof c.recipeId === "string" ? c.recipeId : undefined;
+
+      const targets: { instanceId: string; terminalKey: string }[] = [];
+      if (Array.isArray(c.targets)) {
+        for (const t of c.targets) {
+          if (t && typeof t === "object") {
+            const targetObj = t as Record<string, unknown>;
+            if (
+              typeof targetObj.instanceId === "string" &&
+              typeof targetObj.terminalKey === "string" &&
+              instanceIdSet.has(targetObj.instanceId)
+            ) {
+              targets.push({
+                instanceId: targetObj.instanceId,
+                terminalKey: targetObj.terminalKey,
+              });
+            }
+          }
+        }
+      } else if (typeof c.loadInstanceId === "string" && instanceIdSet.has(c.loadInstanceId)) {
+        const inst = instances.find((i) => i.id === c.loadInstanceId);
+        const cat = inst ? catalog[inst.kind] : undefined;
+        const targetTerminal =
+          cat?.terminals.find((t) => t.direction === "target")?.key || "in";
+        targets.push({
+          instanceId: c.loadInstanceId,
+          terminalKey: targetTerminal,
+        });
+      }
+
+      circuits.push({
+        id: cId,
+        name,
+        targets,
+        description,
+        colorHint,
+        recipeId,
+      });
+    }
+  }
+
   // Migrate layout overrides
-  const rawOverrides = (raw.layoutOverrides && typeof raw.layoutOverrides === "object")
-    ? (raw.layoutOverrides as Record<string, unknown>)
-    : {};
+  const rawOverrides =
+    raw.layoutOverrides && typeof raw.layoutOverrides === "object"
+      ? (raw.layoutOverrides as Record<string, unknown>)
+      : {};
   const layoutOverrides: Record<string, LayoutOverride> = {};
 
   for (const [key, value] of Object.entries(rawOverrides)) {
-    if (value && typeof value === "object") {
+    if (value && typeof value === "object" && instanceIdSet.has(key)) {
       const val = value as Record<string, unknown>;
       if (typeof val.x === "number" && typeof val.y === "number") {
         layoutOverrides[key] = {
@@ -148,8 +330,12 @@ export function migrateProject(data: unknown): ProjectDocument {
     id,
     schemaVersion,
     ruleSetVersion,
+    metadata,
     instances,
     wires,
+    assemblies,
+    circuits,
     layoutOverrides,
   };
 }
+

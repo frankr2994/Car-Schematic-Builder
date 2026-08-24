@@ -1,5 +1,6 @@
 import { PortDefinition } from "../catalog/components";
 import { ProjectDocument, WorkspaceSelection } from "../domain/types";
+import { CircuitTraceResult } from "../domain/traceCircuit";
 
 export type ContinuityState = "unknown" | "normal" | "open";
 
@@ -17,14 +18,28 @@ export interface WiringNodeData extends Record<string, unknown> {
   kind: string;
   zone: string;
   terminals: PortDefinition[];
+  assemblyId?: string;
+  isDimmed?: boolean;
+}
+
+export interface AssemblyNodeData extends Record<string, unknown> {
+  id: string;
+  name: string;
+  kind: string;
+  zone: string;
+  origin: string;
+  memberCount: number;
 }
 
 export interface WiringNodeViewModel {
   id: string;
-  type: "component";
+  type: "component" | "assembly";
   position: { x: number; y: number };
-  data: WiringNodeData;
+  width?: number;
+  height?: number;
+  data: WiringNodeData | AssemblyNodeData;
   selected?: boolean;
+  style?: React.CSSProperties;
 }
 
 export interface WiringEdgeData extends Record<string, unknown> {
@@ -42,6 +57,7 @@ export interface WiringEdgeData extends Record<string, unknown> {
   diagnostic: WireDiagnostic;
   onToggleDiagnostic?: (wireId: string) => void;
   readOnly?: boolean;
+  isDimmed?: boolean;
 }
 
 export interface WiringEdgeViewModel {
@@ -67,9 +83,11 @@ export interface BaseWiringDiagramProps {
   readOnly?: boolean;
   selectedElement?: WorkspaceSelection;
   onSelectionChange?: (selection: WorkspaceSelection) => void;
+  focusCircuit?: CircuitTraceResult | null;
 }
 
 export type WiringDiagramProps = BaseWiringDiagramProps & {
   diagnostics?: WireDiagnostics;
   onDiagnosticChange?: (wireId: string, diagnostic: WireDiagnostic) => void;
 };
+

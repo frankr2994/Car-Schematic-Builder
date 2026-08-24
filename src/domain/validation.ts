@@ -3,6 +3,32 @@ import { ProjectDocument } from "./types";
 import { catalog } from "../catalog/components";
 import { areRolesCompatible, isDeadShort } from "./connectionRules";
 
+export const AssignmentSourceSchema = z.enum(["auto", "manual"]);
+
+export const AssemblyKindSchema = z.enum([
+  "switch_panel",
+  "fuse_relay_box",
+  "ground_bus",
+  "connector_group",
+  "custom",
+]);
+
+export const AssemblyMemberSchema = z.object({
+  instanceId: z.string().min(1),
+  assignmentSource: AssignmentSourceSchema,
+});
+
+export const AssemblySchema = z.object({
+  id: z.string().min(1),
+  name: z.string().min(1),
+  kind: AssemblyKindSchema,
+  zone: z.string().min(1),
+  origin: AssignmentSourceSchema,
+  autoGroupKey: z.string().optional(),
+  members: z.array(AssemblyMemberSchema),
+  collapsed: z.boolean().optional(),
+});
+
 export const LayoutOverrideSchema = z.object({
   x: z.number(),
   y: z.number(),
@@ -19,6 +45,22 @@ export const ComponentInstanceSchema = z.object({
 export const TerminalRefSchema = z.object({
   instanceId: z.string().min(1),
   terminalKey: z.string().min(1),
+});
+
+export const CircuitIntentSchema = z.object({
+  id: z.string().min(1),
+  name: z.string().min(1),
+  targets: z.array(TerminalRefSchema).min(1),
+  description: z.string().optional(),
+  colorHint: z.string().optional(),
+  recipeId: z.string().optional(),
+});
+
+export const ProjectMetadataSchema = z.object({
+  name: z.string().min(1),
+  author: z.string().optional(),
+  date: z.string().optional(),
+  revision: z.string().optional(),
 });
 
 export const WireSchema = z.object({
@@ -48,10 +90,13 @@ export const WireSchema = z.object({
 
 export const ProjectDocumentSchema = z.object({
   id: z.string().min(1),
-  schemaVersion: z.enum(["1.0", "2.0"]),
+  schemaVersion: z.literal("3.0"),
   ruleSetVersion: z.string(),
+  metadata: ProjectMetadataSchema,
   instances: z.array(ComponentInstanceSchema),
   wires: z.array(WireSchema),
+  assemblies: z.array(AssemblySchema),
+  circuits: z.array(CircuitIntentSchema),
   layoutOverrides: z.record(z.string(), LayoutOverrideSchema),
 }).superRefine((data, ctx) => {
   const instanceIds = new Set<string>();
@@ -156,6 +201,61 @@ export const ProjectDocumentSchema = z.object({
       ctx.addIssue({ code: z.ZodIssueCode.custom, message: `Layout override for unknown instance: ${key}` });
     }
   }
+
+  // Assembly validation
+  const assemblyIds = new Set<string>();
+  const assignedInstanceIds = new Set<string>();
+
+  for (const assembly of data.assemblies) {
+    if (assemblyIds.has(assembly.id)) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: `Duplicate assembly ID: ${assembly.id}` });
+    }
+    assemblyIds.add(assembly.id);
+
+    for (const member of assembly.members) {
+      if (!instanceIds.has(member.instanceId)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: `Assembly '${assembly.id}' references missing instance: ${member.instanceId}`,
+        });
+      }
+      if (assignedInstanceIds.has(member.instanceId)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: `Instance '${member.instanceId}' is assigned to multiple assemblies`,
+        });
+      }
+      assignedInstanceIds.add(member.instanceId);
+    }
+  }
+
+  // Circuit intents validation
+  const circuitIds = new Set<string>();
+  for (const circuit of data.circuits) {
+    if (circuitIds.has(circuit.id)) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: `Duplicate circuit ID: ${circuit.id}` });
+    }
+    circuitIds.add(circuit.id);
+
+    for (const target of circuit.targets) {
+      const inst = data.instances.find((i) => i.id === target.instanceId);
+      if (!inst) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: `Circuit '${circuit.id}' references missing target instance: ${target.instanceId}`,
+        });
+        continue;
+      }
+      const cat = catalog[inst.kind];
+      const port = cat?.terminals.find((t) => t.key === target.terminalKey);
+      if (!port) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: `Circuit '${circuit.id}' target terminal '${target.terminalKey}' not found on component '${inst.kind}'`,
+        });
+      }
+    }
+  }
 });
 
 export type ValidationResult =
@@ -170,3 +270,4 @@ export function parseProject(data: unknown): ValidationResult {
     return { success: false, errors: result.error.issues };
   }
 }
+

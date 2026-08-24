@@ -2,10 +2,12 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, fireEvent, waitFor, act } from "@testing-library/react";
 import React from "react";
 import "@testing-library/jest-dom";
+import { Connection, Edge, Node } from "@xyflow/react";
 import { compileTemplate } from "../compiler/compiler";
 import { templates } from "../catalog/components";
 import { WiringDiagram } from "../wiring/WiringDiagram";
 import * as CanvasModule from "../wiring/WiringCanvas";
+
 
 // Mock ResizeObserver for JSDOM
 class ResizeObserverMock {
@@ -42,31 +44,31 @@ describe("Wiring Diagram Interactive Callbacks & Editing Lifecycle", () => {
     expect(capturedPropsFresh?.isValidConnection).toBeDefined();
 
     // 1. Valid connection: battery.pos (source) -> fuse.in (target) without existing wire
-    const validCandidate = {
+    const validCandidate: Connection = {
       source: batt.id,
       sourceHandle: "pos",
       target: fuse.id,
       targetHandle: "in",
     };
-    expect(capturedPropsFresh?.isValidConnection?.(validCandidate as any)).toBe(true);
+    expect(capturedPropsFresh?.isValidConnection?.(validCandidate)).toBe(true);
 
     // 2. Direction invalid: target-to-target (fuse.in -> lamp.in)
-    const targetToTarget = {
+    const targetToTarget: Connection = {
       source: fuse.id,
       sourceHandle: "in",
       target: lamp.id,
       targetHandle: "in",
     };
-    expect(capturedPropsFresh?.isValidConnection?.(targetToTarget as any)).toBe(false);
+    expect(capturedPropsFresh?.isValidConnection?.(targetToTarget)).toBe(false);
 
     // 3. Short circuit: battery.pos (source) -> ground.gnd (target)
-    const deadShort = {
+    const deadShort: Connection = {
       source: batt.id,
       sourceHandle: "pos",
       target: ground.id,
       targetHandle: "gnd",
     };
-    expect(capturedPropsFresh?.isValidConnection?.(deadShort as any)).toBe(false);
+    expect(capturedPropsFresh?.isValidConnection?.(deadShort)).toBe(false);
   });
 
   it("executes onConnect and commits the new wire to onProjectChange", () => {
@@ -142,9 +144,9 @@ describe("Wiring Diagram Interactive Callbacks & Editing Lifecycle", () => {
       sourceHandle: wireToReconnect.sourcePort,
       target: wireToReconnect.targetInstance,
       targetHandle: wireToReconnect.targetPort,
-    };
+    } as unknown as Edge;
 
-    const newConnection = {
+    const newConnection: Connection = {
       source: wireToReconnect.sourceInstance,
       sourceHandle: wireToReconnect.sourcePort,
       target: "splice_1",
@@ -152,7 +154,7 @@ describe("Wiring Diagram Interactive Callbacks & Editing Lifecycle", () => {
     };
 
     act(() => {
-      capturedProps?.onReconnect?.(oldEdge as any, newConnection as any);
+      capturedProps?.onReconnect?.(oldEdge, newConnection);
     });
 
     expect(handleProjectChange).toHaveBeenCalledTimes(1);
@@ -190,7 +192,7 @@ describe("Wiring Diagram Interactive Callbacks & Editing Lifecycle", () => {
     );
 
     act(() => {
-      capturedProps?.onNodesDelete?.([{ id: batt.id } as any]);
+      capturedProps?.onNodesDelete?.([{ id: batt.id } as unknown as Node]);
     });
 
     expect(handleProjectChange).toHaveBeenCalledTimes(1);
@@ -227,7 +229,7 @@ describe("Wiring Diagram Interactive Callbacks & Editing Lifecycle", () => {
     );
 
     act(() => {
-      capturedProps?.onEdgesDelete?.([{ id: wireToDelete.id } as any]);
+      capturedProps?.onEdgesDelete?.([{ id: wireToDelete.id } as unknown as Edge]);
     });
 
     expect(handleProjectChange).toHaveBeenCalledTimes(1);

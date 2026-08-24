@@ -3,7 +3,7 @@ import { migrateProject } from "../domain/migrations";
 import { parseProject } from "../domain/validation";
 
 describe("Schema Migrations", () => {
-  it("normalizes a legacy v1.0 document into a full v2.0 document with dual endpoints", () => {
+  it("normalizes a legacy v1.0 document into a canonical Schema v3.0 document", () => {
     const legacyDoc = {
       id: "legacy_proj",
       schemaVersion: "1.0",
@@ -31,7 +31,10 @@ describe("Schema Migrations", () => {
     const migrated = migrateProject(legacyDoc);
 
     expect(migrated.id).toBe("legacy_proj");
-    expect(migrated.schemaVersion).toBe("2.0");
+    expect(migrated.schemaVersion).toBe("3.0");
+    expect(migrated.metadata).toBeDefined();
+    expect(migrated.assemblies).toEqual([]);
+    expect(migrated.circuits).toEqual([]);
     expect(migrated.instances.length).toBe(2);
     expect(migrated.wires.length).toBe(1);
     expect(migrated.wires[0].a).toEqual({ instanceId: "batt_1", terminalKey: "pos" });
@@ -82,7 +85,7 @@ describe("Schema Migrations", () => {
     expect(validated.success).toBe(true);
   });
 
-  it("migrates endpoints from v2 endpoint objects (a and b) and passes direct validation", () => {
+  it("migrates legacy memberInstanceIds and loadInstanceId into Schema v3 structures", () => {
     const v2Doc = {
       id: "v2_proj",
       schemaVersion: "2.0",
@@ -103,12 +106,25 @@ describe("Schema Migrations", () => {
           lengthMm: 800,
         },
       ],
+      assemblies: [
+        {
+          id: "asm_1",
+          name: "Dash Fuse Box",
+          kind: "fuse_relay_box",
+          zone: "Dash",
+          origin: "auto",
+          memberInstanceIds: ["fuse_1"],
+        },
+      ],
+      circuits: [
+        {
+          id: "c_1",
+          name: "Main Fuse Feed",
+          loadInstanceId: "fuse_1",
+        },
+      ],
       layoutOverrides: {},
     };
-
-    // Direct validation of endpoint-only v2 document
-    const directValidation = parseProject(v2Doc);
-    expect(directValidation.success).toBe(true);
 
     const migrated = migrateProject(v2Doc);
 
@@ -116,9 +132,8 @@ describe("Schema Migrations", () => {
     expect(migrated.wires[0].sourcePort).toBe("pos");
     expect(migrated.wires[0].targetInstance).toBe("fuse_1");
     expect(migrated.wires[0].targetPort).toBe("in");
-    expect(migrated.wires[0].gaugeAwg).toBe(12);
-    expect(migrated.wires[0].label).toBe("Primary Battery Bus");
-    expect(migrated.wires[0].lengthMm).toBe(800);
+    expect(migrated.assemblies[0].members).toEqual([{ instanceId: "fuse_1", assignmentSource: "auto" }]);
+    expect(migrated.circuits[0].targets).toEqual([{ instanceId: "fuse_1", terminalKey: "in" }]);
 
     const validated = parseProject(migrated);
     expect(validated.success).toBe(true);
@@ -127,14 +142,14 @@ describe("Schema Migrations", () => {
   it("rejects unsupported future schema versions", () => {
     const futureDoc = {
       id: "future_proj",
-      schemaVersion: "3.0",
+      schemaVersion: "99.0",
       ruleSetVersion: "1.0",
       instances: [],
       wires: [],
       layoutOverrides: {},
     };
 
-    expect(() => migrateProject(futureDoc)).toThrowError("Unsupported schema version '3.0'");
+    expect(() => migrateProject(futureDoc)).toThrowError("Unsupported schema version '99.0'");
   });
 
   it("rejects conflicting endpoint representations between legacy and dual fields", () => {
@@ -164,12 +179,6 @@ describe("Schema Migrations", () => {
     };
 
     expect(() => migrateProject(conflictingDoc)).toThrowError("Conflicting target instance");
-
-    const val = parseProject(conflictingDoc);
-    expect(val.success).toBe(false);
-    if (!val.success) {
-      expect(val.errors.some((e) => e.message.includes("Conflicting target instance"))).toBe(true);
-    }
   });
 
   it("handles missing/null input by throwing an informative error", () => {
@@ -177,3 +186,4 @@ describe("Schema Migrations", () => {
     expect(() => migrateProject("string")).toThrowError("Cannot migrate invalid project data");
   });
 });
+

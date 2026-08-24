@@ -41,6 +41,7 @@ function FlowController({
   selectedElement: controlledSelection,
   onSelectionChange,
   readOnly = false,
+  focusCircuit = null,
 }: WiringDiagramProps) {
   const [internalDiagnostics, setInternalDiagnostics] = useState<WireDiagnostics>({});
   const [internalSelection, setInternalSelection] = useState<WorkspaceSelection>(null);
@@ -135,16 +136,18 @@ function FlowController({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [topologyKey, fitView]);
 
-  // Derive base view model from project, layoutResult, diagnostics, and readOnly status
+  // Derive base view model from project, layoutResult, diagnostics, readOnly status, and focusCircuit
   const viewModel = useMemo(() => {
     if (!project) return { nodes: [], edges: [] };
     return buildWiringViewModel(
       project,
       layoutResult,
       currentDiagnostics,
-      readOnly ? undefined : handleToggleDiagnostic
+      readOnly ? undefined : handleToggleDiagnostic,
+      focusCircuit
     );
-  }, [project, layoutResult, currentDiagnostics, readOnly, handleToggleDiagnostic]);
+  }, [project, layoutResult, currentDiagnostics, readOnly, handleToggleDiagnostic, focusCircuit]);
+
 
   // Apply transient drag positions and selection states to rendered nodes
   const renderedNodes = useMemo(() => {

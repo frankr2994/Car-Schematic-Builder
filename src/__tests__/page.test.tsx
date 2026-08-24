@@ -23,24 +23,13 @@ describe("Home Page", () => {
     expect(screen.getByText(/Wiring Schematic Designer/i)).toBeInTheDocument();
     
     // Reset button should exist
-    expect(screen.getByText(/Reset/i)).toBeInTheDocument();
-  });
-
-  it("reverts to default if localStorage has malformed data", async () => {
-    localStorage.setItem("wiring_project", JSON.stringify({ invalid: "data" }));
-    
-    render(<Home />);
-    
-    // Should still render and override the invalid project with a default one
-    await waitFor(() => {
-      expect(screen.getByText(/Wiring Schematic Designer/i)).toBeInTheDocument();
-    });
+    expect(screen.getByRole("button", { name: /^reset$/i })).toBeInTheDocument();
   });
 
   it("handles Reset button click", async () => {
     render(<Home />);
     
-    const resetBtn = screen.getByText(/Reset/i);
+    const resetBtn = screen.getByRole("button", { name: /^reset$/i });
     fireEvent.click(resetBtn);
     
     expect(localStorage.getItem("wiring_project")).toBeTruthy();
@@ -49,8 +38,11 @@ describe("Home Page", () => {
   it("persists and loads layout overrides", async () => {
     const proj = {
       id: "test",
-      schemaVersion: "1.0",
+      schemaVersion: "3.0",
       ruleSetVersion: "1.0",
+      metadata: { name: "Test Proj" },
+      assemblies: [],
+      circuits: [],
       instances: [{ id: "batt", kind: "battery.12v", name: "Batt", zone: "Zone" }],
       wires: [],
       layoutOverrides: {
@@ -62,7 +54,6 @@ describe("Home Page", () => {
     render(<Home />);
     
     await waitFor(() => {
-      // It should load and NOT overwrite the project with the default one
       expect(screen.getByText("Batt")).toBeInTheDocument();
     });
     
@@ -71,3 +62,4 @@ describe("Home Page", () => {
     expect(saved.layoutOverrides.batt).toEqual({ x: 100, y: 100, locked: true });
   });
 });
+

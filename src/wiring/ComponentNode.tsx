@@ -6,13 +6,17 @@ import { calculateTerminalRowCenter } from "./theme";
 
 export const ComponentNode: React.FC<NodeProps> = ({ data, selected }) => {
   const nodeData = data as unknown as WiringNodeData;
+  const isDimmed = nodeData.isDimmed ?? false;
 
   return (
     <div
-      className={`wiring-component-node ${selected ? "selected" : ""}`}
+      className={`wiring-component-node ${selected ? "selected" : ""} ${isDimmed ? "opacity-30 grayscale" : ""}`}
       tabIndex={0}
       role="region"
       aria-label={`Component ${nodeData.name}, zone ${nodeData.zone}`}
+      style={{
+        transition: "opacity 0.2s ease, filter 0.2s ease",
+      }}
     >
       <div className="wiring-node-header" title={nodeData.name}>
         {nodeData.name}
@@ -49,3 +53,4 @@ export const ComponentNode: React.FC<NodeProps> = ({ data, selected }) => {
 };
 
 export default memo(ComponentNode);
+

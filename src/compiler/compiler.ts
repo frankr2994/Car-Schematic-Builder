@@ -126,10 +126,17 @@ export function compileTemplate(
 
   return {
     id: currentProject?.id || (options?.idFactory ? options.idFactory() : crypto.randomUUID()),
-    schemaVersion: "1.0",
+    schemaVersion: "3.0",
     ruleSetVersion: "1.0",
+    metadata: currentProject?.metadata || {
+      name: template.name,
+      revision: "1.0",
+    },
     instances,
     wires,
-    layoutOverrides
+    assemblies: currentProject?.assemblies || [],
+    circuits: currentProject?.circuits || [],
+    layoutOverrides,
   };
 }
+

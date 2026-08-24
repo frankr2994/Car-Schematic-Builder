@@ -1,6 +1,6 @@
 import { catalog } from "../catalog/components";
 import { ProjectDocument } from "../domain/types";
-import { WiringLayoutRequest, WiringLayoutResult } from "./layout/types";
+import { LayoutNodeInput, WiringLayoutRequest, WiringLayoutResult } from "./layout/types";
 import {
   WiringViewModel,
   WiringNodeViewModel,
@@ -9,27 +9,74 @@ import {
   WireDiagnostic,
 } from "./model";
 import { WIRING_THEME, calculateNodeHeight, calculateFallbackNodePosition } from "./theme";
+import { CircuitTraceResult } from "../domain/traceCircuit";
+
+function createLayoutNodeForInstance(
+  inst: ProjectDocument["instances"][0],
+  parentId?: string
+): LayoutNodeInput {
+  const def = catalog[inst.kind] || { terminals: [] };
+  const height = calculateNodeHeight(def.terminals.length);
+
+  return {
+    id: inst.id,
+    name: inst.name,
+    width: WIRING_THEME.geometry.nodeWidth,
+    height,
+    parentId,
+    ports: def.terminals.map((t) => ({
+      id: `${inst.id}_${t.key}`,
+      width: WIRING_THEME.geometry.portSize,
+      height: WIRING_THEME.geometry.portSize,
+      side: (t.direction === "source" ? "EAST" : "WEST") as "EAST" | "WEST",
+    })),
+  };
+}
 
 export function projectToLayoutRequest(project: ProjectDocument): WiringLayoutRequest {
+  const assignedToAssembly = new Map<string, string>(); // instanceId -> assemblyId
+
+  for (const asm of project.assemblies || []) {
+    for (const member of asm.members) {
+      assignedToAssembly.set(member.instanceId, asm.id);
+    }
+  }
+
+  const nodes: LayoutNodeInput[] = [];
+
+  // Add assembly compound nodes
+  for (const asm of project.assemblies || []) {
+    const memberInstances = project.instances.filter((i) =>
+      asm.members.some((m) => m.instanceId === i.id)
+    );
+
+    if (memberInstances.length > 0) {
+      const childNodes = memberInstances.map((inst) =>
+        createLayoutNodeForInstance(inst, asm.id)
+      );
+
+      nodes.push({
+        id: asm.id,
+        name: asm.name,
+        width: 300,
+        height: 200,
+        ports: [],
+        children: childNodes,
+        isCompound: true,
+      });
+    }
+  }
+
+  // Add remaining unassigned instances
+  for (const inst of project.instances) {
+    if (!assignedToAssembly.has(inst.id)) {
+      nodes.push(createLayoutNodeForInstance(inst));
+    }
+  }
+
   return {
     id: project.id || "root",
-    nodes: project.instances.map((inst) => {
-      const def = catalog[inst.kind] || { terminals: [] };
-      const height = calculateNodeHeight(def.terminals.length);
-
-      return {
-        id: inst.id,
-        name: inst.name,
-        width: WIRING_THEME.geometry.nodeWidth,
-        height,
-        ports: def.terminals.map((t) => ({
-          id: `${inst.id}_${t.key}`,
-          width: WIRING_THEME.geometry.portSize,
-          height: WIRING_THEME.geometry.portSize,
-          side: (t.direction === "source" ? "EAST" : "WEST") as "EAST" | "WEST",
-        })),
-      };
-    }),
+    nodes,
     connections: project.wires.map((wire) => ({
       id: wire.id,
       source: `${wire.sourceInstance}_${wire.sourcePort}`,
@@ -42,9 +89,22 @@ export function buildWiringViewModel(
   project: ProjectDocument,
   layoutResult: WiringLayoutResult,
   diagnostics: WireDiagnostics = {},
-  onToggleDiagnostic?: (wireId: string) => void
+  onToggleDiagnostic?: (wireId: string) => void,
+  focusCircuit?: CircuitTraceResult | null
 ): WiringViewModel {
   const nodeLookup = layoutResult.nodes || {};
+
+  const focusedComponentSet = focusCircuit
+    ? new Set(focusCircuit.componentIds)
+    : null;
+  const focusedWireSet = focusCircuit ? new Set(focusCircuit.wireIds) : null;
+
+  const instanceToAssembly = new Map<string, string>();
+  for (const asm of project.assemblies || []) {
+    for (const m of asm.members) {
+      instanceToAssembly.set(m.instanceId, asm.id);
+    }
+  }
 
   const nodes: WiringNodeViewModel[] = project.instances.map((inst, index) => {
     const positioned = nodeLookup[inst.id];
@@ -56,6 +116,10 @@ export function buildWiringViewModel(
       ? { x: override.x, y: override.y }
       : { x: positioned?.x ?? fallback.x, y: positioned?.y ?? fallback.y };
 
+    const isDimmed = Boolean(
+      focusedComponentSet && !focusedComponentSet.has(inst.id)
+    );
+
     return {
       id: inst.id,
       type: "component",
@@ -66,6 +130,8 @@ export function buildWiringViewModel(
         kind: inst.kind,
         zone: inst.zone,
         terminals: def.terminals,
+        assemblyId: instanceToAssembly.get(inst.id),
+        isDimmed,
       },
     };
   });
@@ -94,6 +160,8 @@ export function buildWiringViewModel(
         ? WIRING_THEME.dashPatterns.unknown
         : WIRING_THEME.dashPatterns.normal;
 
+    const isDimmed = Boolean(focusedWireSet && !focusedWireSet.has(wire.id));
+
     return {
       id: wire.id,
       source: wire.sourceInstance,
@@ -116,14 +184,17 @@ export function buildWiringViewModel(
         diagnostic,
         onToggleDiagnostic,
         readOnly: !onToggleDiagnostic,
+        isDimmed,
       },
       style: {
         stroke: strokeColor,
         strokeWidth: WIRING_THEME.strokes.defaultWireWidth,
         strokeDasharray: strokeDasharray !== "none" ? strokeDasharray : undefined,
+        opacity: isDimmed ? 0.2 : 1.0,
       },
     };
   });
 
   return { nodes, edges };
 }
+
