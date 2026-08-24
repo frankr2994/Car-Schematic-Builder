@@ -40,6 +40,19 @@ export function computeOffPageReferences(
     }
   }
 
+  // Default unassigned instances (e.g. battery, chassis ground, unassigned loads) to Sheet 1 (Overview)
+  const overviewMapping: SheetAssemblyMapping = {
+    sheetIndex: 1,
+    sheetTitle: project.metadata.name || "System Overview",
+    instanceIds: new Set(),
+  };
+
+  for (const inst of project.instances) {
+    if (!instanceToSheet.has(inst.id)) {
+      instanceToSheet.set(inst.id, overviewMapping);
+    }
+  }
+
   for (const wire of project.wires) {
     const srcMapping = instanceToSheet.get(wire.sourceInstance);
     const tgtMapping = instanceToSheet.get(wire.targetInstance);
