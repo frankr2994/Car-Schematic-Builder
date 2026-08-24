@@ -106,13 +106,55 @@ export function planCircuitInsertion(
       };
     }
 
+    let actualFromPort = fromPort;
+    const sourceInst = project.instances.find((i) => i.id === sourceInstanceId) || createdInstances.find((i) => i.id === sourceInstanceId);
+    if (sourceInst) {
+      const sourceDef = catalog[sourceInst.kind];
+      if (sourceDef) {
+        const portDef = sourceDef.terminals.find((t) => t.key === actualFromPort);
+        if (!portDef || portDef.direction !== "source") {
+          const sourceTerminals = sourceDef.terminals.filter((t) => t.direction === "source");
+          if (sourceTerminals.length > 0) {
+            const usedPorts = new Set(
+              [...project.wires, ...createdWires]
+                .filter((w) => w.sourceInstance === sourceInstanceId)
+                .map((w) => w.sourcePort)
+            );
+            const openTerm = sourceTerminals.find((t) => !usedPorts.has(t.key)) || sourceTerminals[0];
+            actualFromPort = openTerm.key;
+          }
+        }
+      }
+    }
+
+    let actualToPort = toPort;
+    const targetInst = project.instances.find((i) => i.id === targetInstanceId) || createdInstances.find((i) => i.id === targetInstanceId);
+    if (targetInst) {
+      const targetDef = catalog[targetInst.kind];
+      if (targetDef) {
+        const portDef = targetDef.terminals.find((t) => t.key === actualToPort);
+        if (!portDef || portDef.direction !== "target") {
+          const targetTerminals = targetDef.terminals.filter((t) => t.direction === "target");
+          if (targetTerminals.length > 0) {
+            const usedPorts = new Set(
+              [...project.wires, ...createdWires]
+                .filter((w) => w.targetInstance === targetInstanceId)
+                .map((w) => w.targetPort)
+            );
+            const openTerm = targetTerminals.find((t) => !usedPorts.has(t.key)) || targetTerminals[0];
+            actualToPort = openTerm.key;
+          }
+        }
+      }
+    }
+
     // Check if wire already exists in the project or in createdWires
     const existingWire = [...project.wires, ...createdWires].find(
       (w) =>
         w.sourceInstance === sourceInstanceId &&
-        w.sourcePort === fromPort &&
+        w.sourcePort === actualFromPort &&
         w.targetInstance === targetInstanceId &&
-        w.targetPort === toPort
+        w.targetPort === actualToPort
     );
 
     if (!existingWire) {
@@ -120,11 +162,11 @@ export function planCircuitInsertion(
       const wire: Wire = {
         id: wireId,
         sourceInstance: sourceInstanceId,
-        sourcePort: fromPort,
+        sourcePort: actualFromPort,
         targetInstance: targetInstanceId,
-        targetPort: toPort,
-        a: { instanceId: sourceInstanceId, terminalKey: fromPort },
-        b: { instanceId: targetInstanceId, terminalKey: toPort },
+        targetPort: actualToPort,
+        a: { instanceId: sourceInstanceId, terminalKey: actualFromPort },
+        b: { instanceId: targetInstanceId, terminalKey: actualToPort },
         color: conn.color || "black",
         colorCode: conn.color || "black",
         gauge: conn.gauge || "14",

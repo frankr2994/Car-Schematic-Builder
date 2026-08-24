@@ -34,6 +34,15 @@ export const componentBehaviors: Record<string, ComponentBehavior> = {
       p4: [{ upstreamTerminal: "in" }],
     },
   },
+  "alternator.12v": {
+    kind: "alternator.12v",
+    type: "source",
+    powerSourceTerminals: ["b_plus"],
+    groundTerminals: ["ground"],
+    internalDependencies: {
+      b_plus: [{ upstreamTerminal: "excite" }],
+    },
+  },
   "fuse.blade": {
     kind: "fuse.blade",
     type: "protection",
@@ -53,6 +62,14 @@ export const componentBehaviors: Record<string, ComponentBehavior> = {
     type: "switch",
     internalDependencies: {
       out: [{ upstreamTerminal: "in" }],
+    },
+  },
+  "switch.spdt": {
+    kind: "switch.spdt",
+    type: "switch",
+    internalDependencies: {
+      low: [{ upstreamTerminal: "in" }],
+      high: [{ upstreamTerminal: "in" }],
     },
   },
   "switch.ignition": {
