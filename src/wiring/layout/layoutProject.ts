@@ -12,7 +12,7 @@ function extractNodesRecursively(
   offsetX = 0,
   offsetY = 0,
   parentId?: string,
-  out: Record<string, PositionedNode> = {}
+  out: Record<string, PositionedNode> = Object.create(null)
 ): Record<string, PositionedNode> {
   if (!elkNode.children) return out;
 
@@ -41,18 +41,34 @@ function extractNodesRecursively(
   return out;
 }
 
-export async function layoutWiringRequest(request: WiringLayoutRequest): Promise<WiringLayoutResult> {
+export async function layoutWiringRequest(
+  request: WiringLayoutRequest,
+  elkInstance: InstanceType<typeof ELK> = elk
+): Promise<WiringLayoutResult> {
   try {
     const elkGraph = buildElkGraph(request);
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const layouted = (await elk.layout(elkGraph as any)) as ElkNode;
+    const layouted = (await elkInstance.layout(elkGraph as any)) as ElkNode;
 
-    const nodes = extractNodesRecursively(layouted, 0, 0);
+    const nodes = extractNodesRecursively(layouted, 0, 0, undefined, Object.create(null));
+
+    function hasAllNodes(nodeList: typeof request.nodes): boolean {
+      for (const node of nodeList) {
+        if (!Object.hasOwn(nodes, node.id)) return false;
+        if (node.children && !hasAllNodes(node.children)) return false;
+      }
+      return true;
+    }
+
+    if (!hasAllNodes(request.nodes)) {
+      throw new Error("ELK layout result is missing one or more requested nodes");
+    }
+
     return { nodes };
   } catch (err) {
     console.error("ELK layout failed, using deterministic fallback positions:", err);
-    const fallbackNodes: Record<string, PositionedNode> = {};
+    const fallbackNodes: Record<string, PositionedNode> = Object.create(null);
     let fallbackIdx = 0;
 
     function populateFallback(nodeList: typeof request.nodes, parentId?: string) {
