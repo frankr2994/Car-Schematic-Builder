@@ -61,3 +61,11 @@
 - Introduce `switch.spdt` for multi-position toggles; update headlight dimmer logic
 - Implement port redirection in planCircuitInsertion to route wires through available terminals
 - Default unassigned components and wire endpoints to the System Overview sheet
+
+## [2026-08-29T21:28:16.531Z] fix wiring reconnection logic, layout edge cases, and prototype pollutio
+
+- Guard wire updates against ambiguous or no-change edits
+- Add deterministic fallback node positioning for partial ELK results
+- Use Object.create(NULL) for the layout map to prevent prototype pollution
+- Inject elkInstance into wiring requests instead of a global import
+- Detect dropped nodes after layout before falling back

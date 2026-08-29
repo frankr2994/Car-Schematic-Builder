@@ -88,4 +88,33 @@ describe("Wiring Diagnostics & Fault Overlays", () => {
       notes: "Dimmer circuit rheostat tap",
     });
   });
+
+  it("preserves wire label and notes when controlled diagnostics contains a partial override", () => {
+    const projectWithMeta = {
+      ...sampleProject,
+      wires: [
+        {
+          ...sampleProject.wires[0],
+          label: "Fuel Pump Relay Feed",
+          notes: "Pin 87 to in-tank pump",
+        },
+        ...sampleProject.wires.slice(1),
+      ],
+    };
+
+    const partialDiagnostics: WireDiagnostics = {
+      [firstWireId]: { continuity: "open" },
+    };
+
+    const viewModel = buildWiringViewModel(
+      projectWithMeta,
+      mockLayoutResult,
+      partialDiagnostics
+    );
+    const edge = viewModel.edges.find((e) => e.id === firstWireId);
+
+    expect(edge?.data.diagnostic.continuity).toBe("open");
+    expect(edge?.data.diagnostic.label).toBe("Fuel Pump Relay Feed");
+    expect(edge?.data.diagnostic.notes).toBe("Pin 87 to in-tank pump");
+  });
 });

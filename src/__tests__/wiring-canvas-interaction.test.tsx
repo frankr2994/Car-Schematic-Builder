@@ -275,4 +275,50 @@ describe("Wiring Diagram Interactive Callbacks & Editing Lifecycle", () => {
       expect.objectContaining({ kind: "component" })
     );
   });
+
+  it("ignores ambiguous or unchanged reconnection attempts", () => {
+    let capturedProps: CanvasModule.WiringCanvasProps | undefined;
+    vi.spyOn(CanvasModule, "WiringCanvas").mockImplementation((props) => {
+      capturedProps = props;
+      return <div className="mock-wiring-canvas" />;
+    });
+
+    const project = getFreshProject();
+    const handleProjectChange = vi.fn();
+
+    render(
+      <WiringDiagram project={project} onProjectChange={handleProjectChange} />
+    );
+
+    const wire = project.wires[0];
+    const oldEdge = {
+      id: wire.id,
+      source: wire.sourceInstance,
+      sourceHandle: wire.sourcePort,
+      target: wire.targetInstance,
+      targetHandle: wire.targetPort,
+    } as unknown as Edge;
+
+    // Case 1: Unchanged connection (neither endpoint changed)
+    act(() => {
+      capturedProps?.onReconnect?.(oldEdge, {
+        source: wire.sourceInstance,
+        sourceHandle: wire.sourcePort,
+        target: wire.targetInstance,
+        targetHandle: wire.targetPort,
+      });
+    });
+    expect(handleProjectChange).not.toHaveBeenCalled();
+
+    // Case 2: Ambiguous connection (both endpoints changed)
+    act(() => {
+      capturedProps?.onReconnect?.(oldEdge, {
+        source: "other_1",
+        sourceHandle: "p1",
+        target: "other_2",
+        targetHandle: "p2",
+      });
+    });
+    expect(handleProjectChange).not.toHaveBeenCalled();
+  });
 });
