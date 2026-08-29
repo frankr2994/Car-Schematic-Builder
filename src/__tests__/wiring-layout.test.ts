@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import { compileTemplate } from "../compiler/compiler";
 import { templates } from "../catalog/components";
 import {
@@ -8,8 +8,10 @@ import {
   WIRING_THEME,
   calculateNodeHeight,
   calculateTerminalRowCenter,
+  calculateFallbackNodePosition,
 } from "../wiring";
 import { buildElkGraph } from "../wiring/layout/buildElkGraph";
+import ELK from "elkjs/lib/elk.bundled.js";
 
 describe("Wiring Layout & Geometry", () => {
   const sampleProject = compileTemplate(templates[0]);
@@ -138,5 +140,115 @@ describe("Wiring Layout & Geometry", () => {
     expect(typeof result.nodes["nodeB"].x).toBe("number");
     // Ensure nodes are not collapsed at the same coordinate
     expect(result.nodes["nodeA"].x !== result.nodes["nodeB"].x || result.nodes["nodeA"].y !== result.nodes["nodeB"].y).toBe(true);
+  });
+
+  it("falls back to deterministic placement when ELK result is missing node entries", async () => {
+    const request = {
+      id: "partial-req",
+      nodes: [
+        { id: "node1", name: "Node 1", width: 150, height: 70, ports: [] },
+        { id: "node2", name: "Node 2", width: 150, height: 70, ports: [] },
+      ],
+      connections: [],
+    };
+
+    // Mock ELK to return an incomplete tree containing only node1 at custom coordinates
+    const elkSpy = vi.spyOn(ELK.prototype, "layout").mockResolvedValue({
+      id: "partial-req",
+      children: [{ id: "node1", x: 999, y: 999, width: 150, height: 70 }],
+    });
+
+    try {
+      const result = await layoutWiringRequest(request);
+
+      // Verify that all requested nodes are positioned via fallback placement
+      expect(result.nodes["node1"]).toBeDefined();
+      expect(result.nodes["node2"]).toBeDefined();
+
+      const expectedPos0 = calculateFallbackNodePosition(0);
+      const expectedPos1 = calculateFallbackNodePosition(1);
+
+      // Node 1 should have fallback coordinates, not the partial ELK coordinates (999, 999)
+      expect(result.nodes["node1"].x).toBe(expectedPos0.x);
+      expect(result.nodes["node1"].y).toBe(expectedPos0.y);
+      expect(result.nodes["node2"].x).toBe(expectedPos1.x);
+      expect(result.nodes["node2"].y).toBe(expectedPos1.y);
+    } finally {
+      elkSpy.mockRestore();
+    }
+  });
+
+  it("handles node IDs that conflict with Object prototype properties like 'toString'", async () => {
+    const request = {
+      id: "proto-req",
+      nodes: [
+        { id: "toString", name: "ToString Node", width: 150, height: 70, ports: [] },
+      ],
+      connections: [],
+    };
+
+    // Mock ELK returning an empty tree missing the 'toString' node
+    const elkSpy = vi.spyOn(ELK.prototype, "layout").mockResolvedValue({
+      id: "proto-req",
+      children: [],
+    });
+
+    try {
+      const result = await layoutWiringRequest(request);
+
+      // Should detect missing 'toString' node using Object.hasOwn and apply fallback placement
+      expect(Object.hasOwn(result.nodes, "toString")).toBe(true);
+      expect(result.nodes["toString"]).toBeDefined();
+      const expectedPos = calculateFallbackNodePosition(0);
+      expect(result.nodes["toString"].x).toBe(expectedPos.x);
+      expect(result.nodes["toString"].y).toBe(expectedPos.y);
+    } finally {
+      elkSpy.mockRestore();
+    }
+  });
+
+  it("handles node ID '__proto__' without mutating prototype and preserves own node entry", async () => {
+    const request = {
+      id: "proto-special-req",
+      nodes: [
+        { id: "__proto__", name: "Proto Node", width: 150, height: 70, ports: [] },
+      ],
+      connections: [],
+    };
+
+    // Test 1: Successful ELK layout with __proto__ ID
+    const elkSpy1 = vi.spyOn(ELK.prototype, "layout").mockResolvedValue({
+      id: "proto-special-req",
+      children: [{ id: "__proto__", x: 120, y: 80, width: 150, height: 70 }],
+    });
+
+    try {
+      const successResult = await layoutWiringRequest(request);
+      expect(Object.hasOwn(successResult.nodes, "__proto__")).toBe(true);
+      expect(successResult.nodes["__proto__"]).toBeDefined();
+      expect(successResult.nodes["__proto__"].id).toBe("__proto__");
+      expect(successResult.nodes["__proto__"].x).toBe(120);
+      expect(successResult.nodes["__proto__"].y).toBe(80);
+    } finally {
+      elkSpy1.mockRestore();
+    }
+
+    // Test 2: Fallback layout with __proto__ ID (e.g. missing ELK response)
+    const elkSpy2 = vi.spyOn(ELK.prototype, "layout").mockResolvedValue({
+      id: "proto-special-req",
+      children: [],
+    });
+
+    try {
+      const fallbackResult = await layoutWiringRequest(request);
+      expect(Object.hasOwn(fallbackResult.nodes, "__proto__")).toBe(true);
+      expect(fallbackResult.nodes["__proto__"]).toBeDefined();
+      expect(fallbackResult.nodes["__proto__"].id).toBe("__proto__");
+      const expectedFallback = calculateFallbackNodePosition(0);
+      expect(fallbackResult.nodes["__proto__"].x).toBe(expectedFallback.x);
+      expect(fallbackResult.nodes["__proto__"].y).toBe(expectedFallback.y);
+    } finally {
+      elkSpy2.mockRestore();
+    }
   });
 });
