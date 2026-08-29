@@ -2,36 +2,10 @@ import { ProjectDocument } from "../domain/types";
 import { SchematicSheetSpec } from "../printing/planSheets";
 import { renderSchematicSvg } from "../printing/renderSchematicSvg";
 
-/**
- * Initiates a browser download for a given Blob and filename.
- */
-export function downloadBlob(blob: Blob, filename: string): void {
-  if (typeof window === "undefined" || typeof document === "undefined") {
-    return;
-  }
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = filename;
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  setTimeout(() => {
-    URL.revokeObjectURL(url);
-  }, 100);
-}
+import { downloadBlob, downloadText } from "../documents/fileSystemGateway";
+import { encodeProjectJson } from "../documents/projectCodec";
 
-/**
- * Initiates a browser download for text content (JSON, SVG, etc.).
- */
-export function downloadText(
-  content: string,
-  filename: string,
-  mimeType: string = "text/plain;charset=utf-8"
-): void {
-  const blob = new Blob([content], { type: mimeType });
-  downloadBlob(blob, filename);
-}
+export { downloadBlob, downloadText };
 
 /**
  * Serializes and exports the ProjectDocument as a JSON file.
@@ -48,7 +22,7 @@ export function exportProjectAsJson(
     filename = `${filename}.json`;
   }
 
-  const jsonContent = JSON.stringify(project, null, 2);
+  const jsonContent = encodeProjectJson(project, true);
   downloadText(jsonContent, filename, "application/json;charset=utf-8");
 }
 

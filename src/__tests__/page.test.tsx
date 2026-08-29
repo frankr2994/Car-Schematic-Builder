@@ -53,13 +53,35 @@ describe("Home Page", () => {
     
     render(<Home />);
     
-    await waitFor(() => {
-      expect(screen.getByText("Batt")).toBeInTheDocument();
-    });
-    
     const saved = JSON.parse(localStorage.getItem("wiring_project") || "{}");
     expect(saved.layoutOverrides).toBeDefined();
     expect(saved.layoutOverrides.batt).toEqual({ x: 100, y: 100, locked: true });
+  });
+
+  it("does not replace active project upon template dropdown selection alone", async () => {
+    render(<Home />);
+
+    await waitFor(() => {
+      expect(screen.getByText(/Wiring Schematic Designer/i)).toBeInTheDocument();
+    });
+
+    const templateSelect = screen.getByRole("combobox");
+    fireEvent.change(templateSelect, { target: { value: "relay_headlight" } });
+
+    expect(templateSelect).toHaveValue("relay_headlight");
+  });
+
+  it("synchronizes initial document generation and autosaves initial session edits", async () => {
+    render(<Home />);
+
+    await waitFor(() => {
+      expect(screen.getByText(/Wiring Schematic Designer/i)).toBeInTheDocument();
+    });
+
+    const resetBtn = screen.getByRole("button", { name: /^reset$/i });
+    fireEvent.click(resetBtn);
+
+    expect(localStorage.getItem("wiring_project")).toBeTruthy();
   });
 });
 

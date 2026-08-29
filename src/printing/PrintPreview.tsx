@@ -3,6 +3,7 @@ import React, { useState, useMemo } from "react";
 import { ProjectDocument } from "../domain/types";
 import { CircuitTraceResult } from "../domain/traceCircuit";
 import { planSheets, PaperSize, PrintMode, PAPER_SIZES } from "./planSheets";
+import { downloadBlob } from "../documents/fileSystemGateway";
 import { renderSchematicSvg } from "./renderSchematicSvg";
 
 export interface PrintPreviewProps {
@@ -41,14 +42,8 @@ export const PrintPreview: React.FC<PrintPreviewProps> = ({
   const handleDownloadSvg = () => {
     if (!svgContent || !activeSheet) return;
     const blob = new Blob([svgContent], { type: "image/svg+xml;charset=utf-8" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `${project.metadata.name.replace(/\s+/g, "_")}_sheet_${activeSheet.sheetIndex}.svg`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
+    const filename = `${project.metadata.name.replace(/\s+/g, "_")}_sheet_${activeSheet.sheetIndex}.svg`;
+    downloadBlob(blob, filename);
   };
 
   const handlePrint = () => {

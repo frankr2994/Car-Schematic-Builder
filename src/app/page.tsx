@@ -40,14 +40,22 @@ import QuickAdd from "../wiring/QuickAdd";
 import CircuitFocusBar from "../wiring/CircuitFocusBar";
 import PrintPreview from "../printing/PrintPreview";
 import { ProjectWorkspaceContext, ProjectWorkspaceContextType } from "../context/ProjectWorkspaceContext";
-import { LocalFileMenu } from "../wiring/LocalFileMenu";
+import { DocumentToolbar } from "../components/DocumentToolbar";
+import { ActiveFileMetadata, ReplaceProjectOptions } from "../documents/types";
+import { isProjectDirty } from "../documents/projectCodec";
+import { createReplaceActiveProject } from "../documents/replaceProject";
 
 export default function Home() {
   const [project, setProject] = useState<ProjectDocument | null>(null);
+  const [activeFile, setActiveFile] = useState<ActiveFileMetadata | null>(null);
+  const [savedFingerprint, setSavedFingerprint] = useState<string | null>(null);
   const [currentProjectId, setCurrentProjectId] = useState<string>("project-1.json");
   const [diagnostics, setDiagnostics] = useState<WireDiagnostics>({});
   const [selection, setSelection] = useState<WorkspaceSelection>(null);
   const [activeTemplateId, setActiveTemplateId] = useState<string>(templates[0].id);
+
+  // Document generation counter to prevent stale debounced writes
+  const generationRef = useRef<number>(1);
 
   // Storage recovery & error banner state
   const [storageNotice, setStorageNotice] = useState<string | null>(null);
@@ -67,17 +75,82 @@ export default function Home() {
   const [isPrintPreviewOpen, setIsPrintPreviewOpen] = useState(false);
   const [focusCircuit, setFocusCircuit] = useState<CircuitTraceResult | null>(null);
 
-  // Initialize Project and Transaction Manager
+  // Dirty state computed against saved baseline fingerprint
+  const isDirty = useMemo(() => {
+    return isProjectDirty(project, savedFingerprint);
+  }, [project, savedFingerprint]);
+
+  // Unified replaceActiveProject lifecycle orchestrator
+  const replaceActiveProject = useCallback(
+    (next: ProjectDocument, options: ReplaceProjectOptions) => {
+      const runner = createReplaceActiveProject({
+        setProject,
+        setActiveFile: (file) => {
+          setActiveFile(file);
+          if (file?.name) {
+            setCurrentProjectId(file.name);
+          }
+        },
+        setSavedFingerprint,
+        setDiagnostics,
+        setSelection,
+        setFocusCircuit,
+        txManagerRef,
+        generationRef,
+        storageInstance: storage,
+      });
+      return runner(next, options);
+    },
+    [setProject, setActiveFile, setSavedFingerprint, setDiagnostics, setSelection, setFocusCircuit, setCurrentProjectId]
+  );
+
+  // Attach tx subscription for a specific document generation
+  const attachTxSubscription = useCallback(
+    (tx: TransactionManager, generation: number) => {
+      return tx.subscribe((state) => {
+        if (generationRef.current !== generation) {
+          return;
+        }
+        setProject(state.present);
+        setHistoryState({
+          canUndo: state.past.length > 0,
+          canRedo: state.future.length > 0,
+        });
+        storage.saveDebounced(state.present, 300, undefined, generation);
+      });
+    },
+    [setProject, setHistoryState]
+  );
+
+  // Initialize Project and Transaction Manager on Mount
   useEffect(() => {
+    let unsubscribeTx: (() => void) | undefined;
+
     const init = async () => {
       const loadResult = storage.load();
       let initialProject: ProjectDocument;
+      let initialFingerprint: string | null = null;
+      let initialActiveFile: ActiveFileMetadata | null = null;
 
       if (loadResult.status === "loaded") {
         initialProject = loadResult.project;
+        const recoveryEnv = storage.loadRecoveryEnvelope();
+        if (recoveryEnv?.savedFingerprint) {
+          initialFingerprint = recoveryEnv.savedFingerprint;
+          initialActiveFile = recoveryEnv.activeFileName ? { name: recoveryEnv.activeFileName } : null;
+        } else {
+          // Recovery autosave is NOT an explicit native save; keep dirty baseline null and activeFile null
+          initialFingerprint = null;
+          initialActiveFile = null;
+        }
+        if (loadResult.recovered) {
+          setStorageNotice("Recovered unsaved document from session storage fallback.");
+        }
       } else if (loadResult.status === "empty") {
         initialProject = compileTemplate(templates[0]);
         storage.saveImmediate(initialProject);
+        initialFingerprint = null; // Fresh unsaved document
+        initialActiveFile = null;
       } else {
         // Corrupt or unsupported schema version: preserve storage and start fresh in-memory session
         initialProject = compileTemplate(templates[0]);
@@ -90,26 +163,55 @@ export default function Home() {
         setStorageNotice(
           `Stored document could not be loaded directly (${reason}). A clean schematic has been loaded in memory without overwriting previous storage.`
         );
+        initialFingerprint = null; // Unsaved
+        initialActiveFile = null;
       }
+
+      // Synchronize storage activeGeneration with generationRef (Finding 1)
+      storage.setGeneration(generationRef.current);
 
       const tx = new TransactionManager(initialProject);
       txManagerRef.current = tx;
       setProject(initialProject);
-      setCurrentProjectId(`project-${initialProject.id}.json`);
+      setActiveFile(initialActiveFile);
+      setSavedFingerprint(initialFingerprint);
+      setCurrentProjectId(initialActiveFile?.name || `${initialProject.metadata.name.toLowerCase().replace(/\s+/g, "-")}.wiring.json`);
       setHistoryState({ canUndo: tx.canUndo(), canRedo: tx.canRedo() });
 
-      tx.subscribe((state) => {
-        setProject(state.present);
-        setHistoryState({
-          canUndo: state.past.length > 0,
-          canRedo: state.future.length > 0,
-        });
-        storage.saveDebounced(state.present);
-      });
+      unsubscribeTx = attachTxSubscription(tx, generationRef.current);
     };
 
     init();
-  }, []);
+
+    return () => {
+      unsubscribeTx?.();
+    };
+  }, [attachTxSubscription]);
+
+  // Re-subscribe transaction listener when generation advances
+  useEffect(() => {
+    if (!txManagerRef.current) return;
+    const unsubscribe = attachTxSubscription(txManagerRef.current, generationRef.current);
+    return () => {
+      unsubscribe();
+    };
+  }, [project, attachTxSubscription]);
+
+  // Register beforeunload event listener ONLY while isDirty is true
+  useEffect(() => {
+    if (!isDirty) return;
+
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+      e.returnValue = "";
+      return "";
+    };
+
+    window.addEventListener("beforeunload", handleBeforeUnload);
+    return () => {
+      window.removeEventListener("beforeunload", handleBeforeUnload);
+    };
+  }, [isDirty]);
 
   // Keyboard shortcuts (Ctrl+Z, Ctrl+Y, Ctrl+K, Escape)
   useEffect(() => {
@@ -144,7 +246,6 @@ export default function Home() {
   const canUndo = historyState.canUndo;
   const canRedo = historyState.canRedo;
 
-
   const handleUndo = useCallback(() => {
     txManagerRef.current?.undo();
   }, []);
@@ -169,44 +270,31 @@ export default function Home() {
     }));
   }, []);
 
-  const handleReplaceProject = useCallback((newProject: ProjectDocument, fileId?: string) => {
-    txManagerRef.current?.reset(newProject);
-    setProject(newProject);
-    setDiagnostics({});
-    setSelection(null);
-    setFocusCircuit(null);
-    if (fileId) {
-      setCurrentProjectId(fileId);
-    } else {
-      setCurrentProjectId(`project-${newProject.id}.json`);
-    }
-    storage.saveImmediate(newProject);
-  }, []);
+  const handleLegacyReplaceProject = useCallback(
+    (newProject: ProjectDocument, fileId?: string) => {
+      replaceActiveProject(newProject, {
+        origin: "open",
+        activeFile: fileId ? { name: fileId } : null,
+        markClean: true,
+      });
+    },
+    [replaceActiveProject]
+  );
 
   const handleReset = () => {
     const currentTpl = templates.find((t) => t.id === activeTemplateId) || templates[0];
     const freshProject = compileTemplate(currentTpl);
-    txManagerRef.current?.reset(freshProject);
-    setProject(freshProject);
-    setDiagnostics({});
-    setSelection(null);
-    setFocusCircuit(null);
-    setCurrentProjectId(`project-${freshProject.id}.json`);
-    storage.saveImmediate(freshProject);
+    replaceActiveProject(freshProject, {
+      origin: "reset",
+      activeFile: null,
+      markClean: false,
+    });
   };
 
   const handleSelectTemplate = (templateId: string) => {
     const tpl = templates.find((t) => t.id === templateId);
     if (!tpl) return;
     setActiveTemplateId(templateId);
-    const newProject = compileTemplate(tpl);
-    txManagerRef.current?.reset(newProject);
-    setProject(newProject);
-    setDiagnostics({});
-    setSelection(null);
-    setFocusCircuit(null);
-    setCurrentProjectId(`project-${newProject.id}.json`);
-    storage.saveImmediate(newProject);
   };
 
   const handleAddComponent = useCallback(
@@ -312,7 +400,7 @@ export default function Home() {
       const trace = traceCircuit(project, instanceId);
       setFocusCircuit(trace);
     },
-    [project]
+    [project, setFocusCircuit]
   );
 
   const handleSelectCircuit = useCallback(
@@ -322,7 +410,7 @@ export default function Home() {
       const trace = traceCircuit(project, primaryTarget.instanceId, primaryTarget.terminalKey);
       setFocusCircuit(trace);
     },
-    [project]
+    [project, setFocusCircuit]
   );
 
   const handleSaveCircuitIntent = useCallback(() => {
@@ -341,12 +429,25 @@ export default function Home() {
     () => ({
       currentProjectId,
       setCurrentProjectId,
+      activeFile,
       projectData: project,
-      replaceProject: handleReplaceProject,
+      replaceProject: handleLegacyReplaceProject,
+      replaceActiveProject,
+      savedFingerprint,
+      isDirty,
       canvasRef: canvasContainerRef,
       getCanvasBounds,
     }),
-    [currentProjectId, project, handleReplaceProject, getCanvasBounds]
+    [
+      currentProjectId,
+      activeFile,
+      project,
+      handleLegacyReplaceProject,
+      replaceActiveProject,
+      savedFingerprint,
+      isDirty,
+      getCanvasBounds,
+    ]
   );
 
   if (!project) return <div className="p-8 font-mono text-sm">Loading schematic workbench...</div>;
@@ -360,7 +461,7 @@ export default function Home() {
             <span>⚠️ {storageNotice}</span>
             <button
               onClick={() => setStorageNotice(null)}
-              className="px-2 py-0.5 border border-black hover:bg-amber-200 font-bold"
+              className="px-2 py-0.5 border border-black hover:bg-amber-200 font-bold cursor-pointer"
             >
               ✕ Dismiss
             </button>
@@ -396,8 +497,18 @@ export default function Home() {
           </div>
 
           <div className="flex items-center gap-2">
-            {/* Local File Menu (Save As, Open, Export SVG/PNG) */}
-            <LocalFileMenu onError={(err) => setStorageNotice(err)} />
+            {/* Unified Document Toolbar: New, Open, Import, Save, Save As, Print & Export */}
+            <DocumentToolbar
+              project={project}
+              activeFile={activeFile}
+              savedFingerprint={savedFingerprint}
+              activeTemplateId={activeTemplateId}
+              replaceActiveProject={replaceActiveProject}
+              onOpenPrintPreview={() => setIsPrintPreviewOpen(true)}
+              getCanvasBounds={getCanvasBounds}
+              onError={(err) => setStorageNotice(err)}
+              onSuccessNotice={(msg) => console.log(msg)}
+            />
 
             {/* Quick-Add Button */}
             <button
@@ -412,118 +523,111 @@ export default function Home() {
               </kbd>
             </button>
 
-          {/* Undo / Redo */}
-          <div className="flex border-2 border-black divide-x divide-black bg-white">
+            {/* Undo / Redo */}
+            <div className="flex border-2 border-black divide-x divide-black bg-white">
+              <button
+                onClick={handleUndo}
+                disabled={!canUndo}
+                className="px-2.5 py-1 text-xs font-bold uppercase hover:bg-gray-100 disabled:opacity-30 disabled:hover:bg-white cursor-pointer transition-colors"
+                title="Undo (Ctrl+Z)"
+              >
+                ↶ Undo
+              </button>
+              <button
+                onClick={handleRedo}
+                disabled={!canRedo}
+                className="px-2.5 py-1 text-xs font-bold uppercase hover:bg-gray-100 disabled:opacity-30 disabled:hover:bg-white cursor-pointer transition-colors"
+                title="Redo (Ctrl+Y)"
+              >
+                ↷ Redo
+              </button>
+            </div>
+
+            {/* Reset Button */}
             <button
-              onClick={handleUndo}
-              disabled={!canUndo}
-              className="px-2.5 py-1 text-xs font-bold uppercase hover:bg-gray-100 disabled:opacity-30 disabled:hover:bg-white cursor-pointer transition-colors"
-              title="Undo (Ctrl+Z)"
+              onClick={handleReset}
+              className="px-3 py-1.5 bg-gray-200 hover:bg-gray-300 border-2 border-black text-xs font-bold uppercase cursor-pointer transition-colors"
             >
-              ↶ Undo
-            </button>
-            <button
-              onClick={handleRedo}
-              disabled={!canRedo}
-              className="px-2.5 py-1 text-xs font-bold uppercase hover:bg-gray-100 disabled:opacity-30 disabled:hover:bg-white cursor-pointer transition-colors"
-              title="Redo (Ctrl+Y)"
-            >
-              ↷ Redo
+              Reset
             </button>
           </div>
+        </header>
 
-          {/* Print & Export Studio */}
-          <button
-            onClick={() => setIsPrintPreviewOpen(true)}
-            className="px-3 py-1.5 bg-black text-white hover:bg-gray-800 border-2 border-black text-xs font-bold uppercase cursor-pointer transition-colors"
+        {/* Main Workbench Layout: Palette (Left) | Canvas (Center) | Inspector (Right) */}
+        <main className="flex-1 flex w-full h-full overflow-hidden relative print:p-0">
+          {/* Component Palette */}
+          <div className="print:hidden h-full shrink-0">
+            <Palette onAddComponent={handleAddComponent} />
+          </div>
+
+          {/* Schematic Canvas */}
+          <div
+            ref={canvasContainerRef}
+            data-testid="wiring-canvas-container"
+            className="flex-1 h-full relative bg-white border-y-2 border-black print:border-none"
           >
-            🖨️ Print & Export
-          </button>
+            {/* Circuit Focus Mode Active Banner */}
+            {focusCircuit && (
+              <CircuitFocusBar
+                trace={focusCircuit}
+                project={project}
+                onExitFocus={() => setFocusCircuit(null)}
+                onPrintCircuit={() => setIsPrintPreviewOpen(true)}
+                onSaveCircuitIntent={handleSaveCircuitIntent}
+              />
+            )}
 
-          <button
-            onClick={handleReset}
-            className="px-3 py-1.5 bg-gray-200 hover:bg-gray-300 border-2 border-black text-xs font-bold uppercase cursor-pointer transition-colors"
-          >
-            Reset
-          </button>
-        </div>
-      </header>
-
-      {/* Main Workbench Layout: Palette (Left) | Canvas (Center) | Inspector (Right) */}
-      <main className="flex-1 flex w-full h-full overflow-hidden relative print:p-0">
-        {/* Component Palette */}
-        <div className="print:hidden h-full shrink-0">
-          <Palette onAddComponent={handleAddComponent} />
-        </div>
-
-        {/* Schematic Canvas */}
-        <div
-          ref={canvasContainerRef}
-          data-testid="wiring-canvas-container"
-          className="flex-1 h-full relative bg-white border-y-2 border-black print:border-none"
-        >
-          {/* Circuit Focus Mode Active Banner */}
-          {focusCircuit && (
-            <CircuitFocusBar
-              trace={focusCircuit}
+            <WiringDiagram
               project={project}
-              onExitFocus={() => setFocusCircuit(null)}
-              onPrintCircuit={() => setIsPrintPreviewOpen(true)}
-              onSaveCircuitIntent={handleSaveCircuitIntent}
+              onProjectChange={handleProjectChange}
+              diagnostics={diagnostics}
+              onDiagnosticChange={handleDiagnosticChange}
+              selectedElement={selection}
+              onSelectionChange={setSelection}
+              focusCircuit={focusCircuit}
             />
-          )}
+          </div>
 
-          <WiringDiagram
-            project={project}
-            onProjectChange={handleProjectChange}
-            diagnostics={diagnostics}
-            onDiagnosticChange={handleDiagnosticChange}
-            selectedElement={selection}
-            onSelectionChange={setSelection}
-            focusCircuit={focusCircuit}
-          />
-        </div>
+          {/* Property Inspector */}
+          <div className="print:hidden h-full shrink-0">
+            <Inspector
+              project={project}
+              selection={selection}
+              diagnostics={diagnostics}
+              onUpdateInstance={handleUpdateInstance}
+              onDeleteInstance={handleDeleteInstance}
+              onUpdateWire={handleUpdateWire}
+              onDeleteWire={handleDeleteWire}
+              onDiagnosticChange={handleDiagnosticChange}
+              onClose={() => setSelection(null)}
+              onTraceComponent={handleTraceComponent}
+              onAutoGroup={handleAutoGroup}
+              onAssignMember={handleAssignMember}
+              onRemoveMember={handleRemoveMember}
+              onCreateAssembly={handleCreateAssembly}
+              onDeleteAssembly={handleDeleteAssembly}
+              onSelectCircuit={handleSelectCircuit}
+            />
+          </div>
+        </main>
 
-        {/* Property Inspector */}
-        <div className="print:hidden h-full shrink-0">
-          <Inspector
-            project={project}
-            selection={selection}
-            diagnostics={diagnostics}
-            onUpdateInstance={handleUpdateInstance}
-            onDeleteInstance={handleDeleteInstance}
-            onUpdateWire={handleUpdateWire}
-            onDeleteWire={handleDeleteWire}
-            onDiagnosticChange={handleDiagnosticChange}
-            onClose={() => setSelection(null)}
-            onTraceComponent={handleTraceComponent}
-            onAutoGroup={handleAutoGroup}
-            onAssignMember={handleAssignMember}
-            onRemoveMember={handleRemoveMember}
-            onCreateAssembly={handleCreateAssembly}
-            onDeleteAssembly={handleDeleteAssembly}
-            onSelectCircuit={handleSelectCircuit}
-          />
-        </div>
-      </main>
-
-      {/* Quick-Add (Ctrl+K) Palette Modal */}
-      <QuickAdd
-        isOpen={isQuickAddOpen}
-        onClose={() => setIsQuickAddOpen(false)}
-        onAddComponent={handleAddComponent}
-        onInsertRecipe={handleInsertRecipe}
-      />
-
-      {/* Print Preview Studio Modal */}
-      {isPrintPreviewOpen && (
-        <PrintPreview
-          project={project}
-          focusCircuit={focusCircuit}
-          onClose={() => setIsPrintPreviewOpen(false)}
+        {/* Quick-Add (Ctrl+K) Palette Modal */}
+        <QuickAdd
+          isOpen={isQuickAddOpen}
+          onClose={() => setIsQuickAddOpen(false)}
+          onAddComponent={handleAddComponent}
+          onInsertRecipe={handleInsertRecipe}
         />
-      )}
-    </div>
+
+        {/* Print Preview Studio Modal */}
+        {isPrintPreviewOpen && (
+          <PrintPreview
+            project={project}
+            focusCircuit={focusCircuit}
+            onClose={() => setIsPrintPreviewOpen(false)}
+          />
+        )}
+      </div>
     </ProjectWorkspaceContext.Provider>
   );
 }

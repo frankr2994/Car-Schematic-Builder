@@ -9,6 +9,7 @@ import {
 import { LocalFileMenu } from "../wiring/LocalFileMenu";
 import { ProjectDocument } from "../domain/types";
 import * as exportUtils from "../wiring/exportUtils";
+import * as fileSystemGateway from "../documents/fileSystemGateway";
 import Home from "../app/page";
 
 // React Flow requires ResizeObserver in jsdom
@@ -187,13 +188,14 @@ describe("LocalFileMenu Component", () => {
     expect(fileName).toBe("imported_project.json");
   });
 
-  it("migrates older v1/v2 schema on Open Project before validating and replacing", async () => {
+  it("rejects older v1/v2 schema on Open Project and displays error", async () => {
     const replaceMock = vi.fn();
+    const onErrorMock = vi.fn();
     const contextValue = createMockContext({ replaceProject: replaceMock });
 
     render(
       <ProjectWorkspaceContext.Provider value={contextValue}>
-        <LocalFileMenu />
+        <LocalFileMenu onError={onErrorMock} />
       </ProjectWorkspaceContext.Provider>
     );
 
@@ -213,13 +215,11 @@ describe("LocalFileMenu Component", () => {
     fireEvent.change(fileInput, { target: { files: [file] } });
 
     await waitFor(() => {
-      expect(replaceMock).toHaveBeenCalledTimes(1);
+      expect(onErrorMock).toHaveBeenCalledWith(
+        expect.stringContaining("legacy format (v1/v2). Please use \"Import...\"")
+      );
+      expect(replaceMock).not.toHaveBeenCalled();
     });
-
-    const [migrated] = replaceMock.mock.calls[0];
-    expect(migrated.schemaVersion).toBe("3.0");
-    expect(migrated.instances.length).toBe(1);
-    expect(migrated.instances[0].kind).toBe("battery.12v");
   });
 
   it("handles Open Project errors gracefully on malformed JSON or validation failure", async () => {
@@ -309,30 +309,38 @@ describe("LocalFileMenu Component", () => {
   });
 });
 
-describe("Wiring Toolbar with LocalFileMenu Integration in Home Page", () => {
+describe("Document Toolbar Integration in Home Page", () => {
   beforeEach(() => {
     localStorage.clear();
+    vi.restoreAllMocks();
   });
 
-  it("renders LocalFileMenu in the toolbar and attaches canvas bounds ref to the diagram container", async () => {
+  it("renders DocumentToolbar in the header and attaches canvas bounds ref to the diagram container", async () => {
     render(<Home />);
 
-    expect(screen.getByTestId("local-file-menu-button")).toBeInTheDocument();
+    expect(screen.getByTestId("document-toolbar")).toBeInTheDocument();
+    expect(screen.getByTestId("file-dropdown-button")).toBeInTheDocument();
     expect(screen.getByTestId("wiring-canvas-container")).toBeInTheDocument();
   });
 
   it("allows opening a project file from the toolbar and updates the workspace", async () => {
-    render(<Home />);
-
-    const menuBtn = screen.getByTestId("local-file-menu-button");
-    fireEvent.click(menuBtn);
-
-    const fileInput = screen.getByTestId("local-file-input") as HTMLInputElement;
-    const file = new File([JSON.stringify(mockProject)], "opened_from_toolbar.json", {
-      type: "application/json",
+    const openSpy = vi.spyOn(fileSystemGateway, "openProjectFile").mockResolvedValue({
+      status: "success",
+      filename: "opened_from_toolbar.json",
+      text: JSON.stringify(mockProject),
     });
 
-    fireEvent.change(fileInput, { target: { files: [file] } });
+    render(<Home />);
+
+    const menuBtn = screen.getByTestId("file-dropdown-button");
+    fireEvent.click(menuBtn);
+
+    const openItem = screen.getByTestId("menu-item-open");
+    fireEvent.click(openItem);
+
+    // Unsaved changes confirmation dialog appears to protect dirty initial document
+    const discardBtn = await screen.findByTestId("confirm-discard-button");
+    fireEvent.click(discardBtn);
 
     await waitFor(() => {
       // Component name from mockProject should appear
@@ -343,5 +351,6 @@ describe("Wiring Toolbar with LocalFileMenu Integration in Home Page", () => {
     const stored = JSON.parse(localStorage.getItem("wiring_project") || "{}");
     expect(stored.id).toBe("test-proj-123");
     expect(stored.metadata?.name).toBe("Custom Test Project");
+    expect(openSpy).toHaveBeenCalled();
   });
 });

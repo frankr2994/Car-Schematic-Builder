@@ -1,8 +1,7 @@
 "use client";
 import React, { useState, useRef, useEffect, useCallback } from "react";
 import { useProjectWorkspace } from "../context/ProjectWorkspaceContext";
-import { parseProject } from "../domain/validation";
-import { migrateProject } from "../domain/migrations";
+import { decodeProjectJson } from "../documents/projectCodec";
 import {
   exportProjectAsJson,
   exportSchematicAsSvg,
@@ -82,7 +81,7 @@ export const LocalFileMenu: React.FC<LocalFileMenuProps> = ({
     setIsOpen(false);
   }, []);
 
-  // Handle Opened File (Read -> Parse -> Migrate -> Validate -> Replace)
+  // Handle Opened File (Read -> Centralized Codec -> Replace)
   const handleFileChange = useCallback(
     async (e: React.ChangeEvent<HTMLInputElement>) => {
       const file = e.target.files?.[0];
@@ -90,47 +89,18 @@ export const LocalFileMenu: React.FC<LocalFileMenuProps> = ({
 
       try {
         const text = await file.text();
-        if (!text || text.trim() === "") {
-          onError?.(`Selected file "${file.name}" is empty.`);
-          return;
-        }
-
-        let parsed: unknown;
-        try {
-          parsed = JSON.parse(text);
-        } catch {
-          onError?.(`File "${file.name}" contains malformed JSON.`);
-          return;
-        }
-
-        if (!parsed || typeof parsed !== "object") {
-          onError?.(`File "${file.name}" does not contain a valid JSON object.`);
-          return;
-        }
-
-        // Migrate older schema versions (v1.0, v2.0 -> v3.0)
-        let migrated: unknown;
-        try {
-          migrated = migrateProject(parsed);
-        } catch (mErr) {
-          onError?.(
-            `Failed to migrate "${file.name}": ${
-              mErr instanceof Error ? mErr.message : String(mErr)
-            }`
-          );
-          return;
-        }
-
-        // Validate migrated schema against domain rules
-        const validation = parseProject(migrated);
-        if (!validation.success) {
-          const issueSummary = validation.errors.map((e) => e.message).join("; ");
-          onError?.(`Validation failed for "${file.name}": ${issueSummary}`);
+        const decoded = decodeProjectJson(text, { allowLegacy: false });
+        if (!decoded.success) {
+          if (decoded.code === "legacy_requires_import") {
+            onError?.(`"${file.name}" is a legacy format (v1/v2). Please use "Import..." to migrate this file.`);
+          } else {
+            onError?.(decoded.error);
+          }
           return;
         }
 
         // Atomically replace project state and reset workspace
-        replaceProject(validation.data, file.name);
+        replaceProject(decoded.project, file.name);
         onSuccessNotice?.(`Successfully opened "${file.name}".`);
       } catch (err) {
         onError?.(
