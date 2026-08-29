@@ -1,5 +1,5 @@
 "use client";
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 
 import WiringDiagram, {
   WireDiagnostics,
@@ -39,15 +39,24 @@ import { reconcileAssemblies } from "../domain/autoGrouping";
 import QuickAdd from "../wiring/QuickAdd";
 import CircuitFocusBar from "../wiring/CircuitFocusBar";
 import PrintPreview from "../printing/PrintPreview";
+import { ProjectWorkspaceContext, ProjectWorkspaceContextType } from "../context/ProjectWorkspaceContext";
+import { LocalFileMenu } from "../wiring/LocalFileMenu";
 
 export default function Home() {
   const [project, setProject] = useState<ProjectDocument | null>(null);
+  const [currentProjectId, setCurrentProjectId] = useState<string>("project-1.json");
   const [diagnostics, setDiagnostics] = useState<WireDiagnostics>({});
   const [selection, setSelection] = useState<WorkspaceSelection>(null);
   const [activeTemplateId, setActiveTemplateId] = useState<string>(templates[0].id);
 
   // Storage recovery & error banner state
   const [storageNotice, setStorageNotice] = useState<string | null>(null);
+
+  // Canvas bounds ref & accessor for decoupled graphic export
+  const canvasContainerRef = useRef<HTMLDivElement>(null);
+  const getCanvasBounds = useCallback(() => {
+    return canvasContainerRef.current?.getBoundingClientRect() ?? null;
+  }, []);
 
   // Undo / Redo transaction manager instance
   const txManagerRef = useRef<TransactionManager | null>(null);
@@ -86,6 +95,7 @@ export default function Home() {
       const tx = new TransactionManager(initialProject);
       txManagerRef.current = tx;
       setProject(initialProject);
+      setCurrentProjectId(`project-${initialProject.id}.json`);
       setHistoryState({ canUndo: tx.canUndo(), canRedo: tx.canRedo() });
 
       tx.subscribe((state) => {
@@ -159,13 +169,29 @@ export default function Home() {
     }));
   }, []);
 
+  const handleReplaceProject = useCallback((newProject: ProjectDocument, fileId?: string) => {
+    txManagerRef.current?.reset(newProject);
+    setProject(newProject);
+    setDiagnostics({});
+    setSelection(null);
+    setFocusCircuit(null);
+    if (fileId) {
+      setCurrentProjectId(fileId);
+    } else {
+      setCurrentProjectId(`project-${newProject.id}.json`);
+    }
+    storage.saveImmediate(newProject);
+  }, []);
+
   const handleReset = () => {
     const currentTpl = templates.find((t) => t.id === activeTemplateId) || templates[0];
     const freshProject = compileTemplate(currentTpl);
     txManagerRef.current?.reset(freshProject);
+    setProject(freshProject);
     setDiagnostics({});
     setSelection(null);
     setFocusCircuit(null);
+    setCurrentProjectId(`project-${freshProject.id}.json`);
     storage.saveImmediate(freshProject);
   };
 
@@ -175,9 +201,11 @@ export default function Home() {
     setActiveTemplateId(templateId);
     const newProject = compileTemplate(tpl);
     txManagerRef.current?.reset(newProject);
+    setProject(newProject);
     setDiagnostics({});
     setSelection(null);
     setFocusCircuit(null);
+    setCurrentProjectId(`project-${newProject.id}.json`);
     storage.saveImmediate(newProject);
   };
 
@@ -309,64 +337,80 @@ export default function Home() {
     txManagerRef.current.execute((proj) => createCircuitIntent(proj, intent));
   }, [focusCircuit, project]);
 
+  const workspaceContextValue: ProjectWorkspaceContextType = useMemo(
+    () => ({
+      currentProjectId,
+      setCurrentProjectId,
+      projectData: project,
+      replaceProject: handleReplaceProject,
+      canvasRef: canvasContainerRef,
+      getCanvasBounds,
+    }),
+    [currentProjectId, project, handleReplaceProject, getCanvasBounds]
+  );
+
   if (!project) return <div className="p-8 font-mono text-sm">Loading schematic workbench...</div>;
 
   return (
-    <div className="flex flex-col h-screen bg-gray-100 font-mono text-sm select-none">
-      {/* Recovery / Alert Notice Banner */}
-      {storageNotice && (
-        <div className="px-4 py-2 bg-amber-100 border-b-2 border-black text-amber-900 text-xs flex justify-between items-center shrink-0">
-          <span>⚠️ {storageNotice}</span>
-          <button
-            onClick={() => setStorageNotice(null)}
-            className="px-2 py-0.5 border border-black hover:bg-amber-200 font-bold"
-          >
-            ✕ Dismiss
-          </button>
-        </div>
-      )}
-
-      {/* Top Header */}
-      <header className="flex justify-between items-center px-4 py-3 bg-white border-b-2 border-black print:hidden shadow-xs shrink-0">
-        <div className="flex items-center gap-4">
-          <div>
-            <h1 className="text-lg font-bold uppercase tracking-widest leading-none">
-              Wiring Schematic Designer
-            </h1>
-            <p className="text-xs text-gray-500 mt-0.5">
-              Service Manual CAD & Authoring Workbench (Schema v3.0)
-            </p>
-          </div>
-
-          <div className="hidden lg:flex items-center gap-2 pl-4 border-l border-gray-300">
-            <span className="text-xs font-bold text-gray-600">Template:</span>
-            <select
-              value={activeTemplateId}
-              onChange={(e) => handleSelectTemplate(e.target.value)}
-              className="px-2 py-1 bg-gray-50 border border-black text-xs font-bold focus:outline-none cursor-pointer"
+    <ProjectWorkspaceContext.Provider value={workspaceContextValue}>
+      <div className="flex flex-col h-screen bg-gray-100 font-mono text-sm select-none">
+        {/* Recovery / Alert Notice Banner */}
+        {storageNotice && (
+          <div className="px-4 py-2 bg-amber-100 border-b-2 border-black text-amber-900 text-xs flex justify-between items-center shrink-0">
+            <span>⚠️ {storageNotice}</span>
+            <button
+              onClick={() => setStorageNotice(null)}
+              className="px-2 py-0.5 border border-black hover:bg-amber-200 font-bold"
             >
-              {templates.map((tpl) => (
-                <option key={tpl.id} value={tpl.id}>
-                  {tpl.name}
-                </option>
-              ))}
-            </select>
+              ✕ Dismiss
+            </button>
           </div>
-        </div>
+        )}
 
-        <div className="flex items-center gap-2">
-          {/* Quick-Add Button */}
-          <button
-            onClick={() => setIsQuickAddOpen(true)}
-            className="px-3 py-1.5 bg-amber-400 hover:bg-amber-500 text-black border-2 border-black text-xs font-bold uppercase cursor-pointer transition-colors shadow-xs flex items-center gap-1.5"
-            title="Quick-Add Components & Pre-Wired Circuit Recipes (Ctrl+K)"
-          >
-            <span>⚡</span>
-            <span>Quick-Add</span>
-            <kbd className="hidden sm:inline-block px-1 py-0.2 bg-black/10 text-[9px] rounded font-mono">
-              Ctrl+K
-            </kbd>
-          </button>
+        {/* Top Header */}
+        <header className="flex justify-between items-center px-4 py-3 bg-white border-b-2 border-black print:hidden shadow-xs shrink-0">
+          <div className="flex items-center gap-4">
+            <div>
+              <h1 className="text-lg font-bold uppercase tracking-widest leading-none">
+                Wiring Schematic Designer
+              </h1>
+              <p className="text-xs text-gray-500 mt-0.5">
+                Service Manual CAD & Authoring Workbench (Schema v3.0)
+              </p>
+            </div>
+
+            <div className="hidden lg:flex items-center gap-2 pl-4 border-l border-gray-300">
+              <span className="text-xs font-bold text-gray-600">Template:</span>
+              <select
+                value={activeTemplateId}
+                onChange={(e) => handleSelectTemplate(e.target.value)}
+                className="px-2 py-1 bg-gray-50 border border-black text-xs font-bold focus:outline-none cursor-pointer"
+              >
+                {templates.map((tpl) => (
+                  <option key={tpl.id} value={tpl.id}>
+                    {tpl.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2">
+            {/* Local File Menu (Save As, Open, Export SVG/PNG) */}
+            <LocalFileMenu onError={(err) => setStorageNotice(err)} />
+
+            {/* Quick-Add Button */}
+            <button
+              onClick={() => setIsQuickAddOpen(true)}
+              className="px-3 py-1.5 bg-amber-400 hover:bg-amber-500 text-black border-2 border-black text-xs font-bold uppercase cursor-pointer transition-colors shadow-xs flex items-center gap-1.5"
+              title="Quick-Add Components & Pre-Wired Circuit Recipes (Ctrl+K)"
+            >
+              <span>⚡</span>
+              <span>Quick-Add</span>
+              <kbd className="hidden sm:inline-block px-1 py-0.2 bg-black/10 text-[9px] rounded font-mono">
+                Ctrl+K
+              </kbd>
+            </button>
 
           {/* Undo / Redo */}
           <div className="flex border-2 border-black divide-x divide-black bg-white">
@@ -413,7 +457,11 @@ export default function Home() {
         </div>
 
         {/* Schematic Canvas */}
-        <div className="flex-1 h-full relative bg-white border-y-2 border-black print:border-none">
+        <div
+          ref={canvasContainerRef}
+          data-testid="wiring-canvas-container"
+          className="flex-1 h-full relative bg-white border-y-2 border-black print:border-none"
+        >
           {/* Circuit Focus Mode Active Banner */}
           {focusCircuit && (
             <CircuitFocusBar
@@ -476,5 +524,6 @@ export default function Home() {
         />
       )}
     </div>
+    </ProjectWorkspaceContext.Provider>
   );
 }

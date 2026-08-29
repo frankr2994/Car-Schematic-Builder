@@ -50,3 +50,15 @@ export type {
 } from "./layout/types";
 
 export { projectToLayoutRequest, buildWiringViewModel } from "./projectAdapter";
+
+export { LocalFileMenu, localFileMenu } from "./LocalFileMenu";
+export type { LocalFileMenuProps } from "./LocalFileMenu";
+
+export {
+  downloadBlob,
+  downloadText,
+  exportProjectAsJson,
+  generateCanvasSvg,
+  exportSchematicAsSvg,
+  exportSchematicAsPng,
+} from "./exportUtils";
