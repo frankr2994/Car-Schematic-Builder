@@ -137,10 +137,11 @@ export function buildWiringViewModel(
   });
 
   const edges: WiringEdgeViewModel[] = project.wires.map((wire) => {
-    const diagnostic: WireDiagnostic = diagnostics[wire.id] || {
-      continuity: "normal",
-      label: wire.label,
-      notes: wire.notes,
+    const diagOverride = diagnostics[wire.id];
+    const diagnostic: WireDiagnostic = {
+      continuity: diagOverride?.continuity ?? "normal",
+      label: diagOverride?.label ?? wire.label,
+      notes: diagOverride?.notes ?? wire.notes,
     };
 
     const isFault = diagnostic.continuity === "open";

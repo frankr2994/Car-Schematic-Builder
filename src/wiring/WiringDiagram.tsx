@@ -240,11 +240,24 @@ function FlowController({
   const onReconnect = useCallback(
     (oldEdge: Edge, newConnection: Connection) => {
       if (readOnly || !project) return;
-      const isSourceChanged = oldEdge.source !== newConnection.source || oldEdge.sourceHandle !== newConnection.sourceHandle;
+      const isSourceChanged =
+        oldEdge.source !== newConnection.source ||
+        oldEdge.sourceHandle !== newConnection.sourceHandle;
+      const isTargetChanged =
+        oldEdge.target !== newConnection.target ||
+        oldEdge.targetHandle !== newConnection.targetHandle;
+
+      // Validate that exactly one endpoint changed
+      if (isSourceChanged === isTargetChanged) {
+        return;
+      }
+
       const endpointToChange = isSourceChanged ? "source" : "target";
       const newEndpoint = isSourceChanged
         ? { instanceId: newConnection.source || "", portKey: newConnection.sourceHandle || "" }
         : { instanceId: newConnection.target || "", portKey: newConnection.targetHandle || "" };
+
+      if (!newEndpoint.instanceId || !newEndpoint.portKey) return;
 
       const result = reconnectWire(project, oldEdge.id, newEndpoint, endpointToChange);
       if (result.ok) {
