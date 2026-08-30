@@ -32,9 +32,10 @@ export const ComponentNode: React.FC<NodeProps> = ({ data, selected }) => {
           const topPosition = calculateTerminalRowCenter(i);
 
           const tState = nodeData.simTerminalStates?.[`${nodeData.id}.${t.key}`];
+          const isTermBackfeed = nodeData.simBackfeedTerminals?.includes(`${nodeData.id}.${t.key}`);
           let hClass = "";
           if (tState?.isShorted) hClass = "term-shorted";
-          else if (nodeData.simBackfeed && nodeData.simTerminalStates?.[`${nodeData.id}.${t.key}`]?.hasPower) hClass = "term-backfeed";
+          else if (isTermBackfeed) hClass = "term-backfeed";
           else if (tState?.hasPower) hClass = "term-powered";
           else if (tState?.hasGround) hClass = "term-grounded";
 

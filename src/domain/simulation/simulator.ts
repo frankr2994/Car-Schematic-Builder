@@ -24,7 +24,10 @@ export function simulate(
 
 
   // Endpoint normalization
-  const validWires = project.wires.filter(w => !diagnostics[w.id]?.continuity || diagnostics[w.id].continuity !== "open").map(w => {
+  const validWires = project.wires.filter(w => {
+    const c = diagnostics[w.id]?.continuity;
+    return c !== "open" && c !== "unknown";
+  }).map(w => {
     return {
       id: w.id,
       a: w.a ?? { instanceId: w.sourceInstance, terminalKey: w.sourcePort },
@@ -104,8 +107,6 @@ export function simulate(
           if (c.position === "ign") { link("bat", "acc"); link("bat", "ign"); }
           if (c.position === "st") { link("bat", "ign"); link("bat", "st"); }
         }
-      } else if (inst.kind === "flasher.2pin") {
-        link("x", "l");
       } else if (inst.kind === "relay.spdt" || inst.kind === "relay.4pin") {
         if (relayEnergized.has(inst.id)) link("30", "87");
         else if (inst.kind === "relay.spdt") link("30", "87a");
@@ -194,7 +195,8 @@ export function simulate(
       }
 
       for (const w of project.wires) {
-        if (diagnostics[w.id]?.continuity === "open") {
+        const continuity = diagnostics[w.id]?.continuity;
+        if (continuity === "open" || continuity === "unknown") {
           wireStates[w.id] = { hasPower: false, hasGround: false, isShorted: false };
           continue;
         }
@@ -227,6 +229,12 @@ export function simulate(
           const si = termState(inst.id, "in");
           const sg = termState(inst.id, "ground");
           if (si.hasPower && !si.isShorted && sg.hasGround && !sg.isShorted) active = true;
+        } else if (inst.kind === "flasher.2pin") {
+          const sx = termState(inst.id, "x");
+          const sl = termState(inst.id, "l");
+          // Flasher is active when receiving power and grounded through a load, but we don't strictly require ground direct connection
+          // For simplicity, it's active if x has power.
+          if (sx.hasPower && !sx.isShorted) active = true;
         } else if (inst.kind === "gauge.voltmeter") {
           const si = termState(inst.id, "sense");
           const sg = termState(inst.id, "ground");
@@ -239,14 +247,22 @@ export function simulate(
         } else if (inst.kind === "relay.spdt" || inst.kind === "relay.4pin") {
           if (nextRelayEnergized.has(inst.id)) active = true;
           // Backfeed check for relays (87/87a receiving power when not routed to 30)
+          // ONLY if 30 doesn't also have power (which would make it a normal passthrough)
+          const s30 = termState(inst.id, "30");
           const s87 = termState(inst.id, "87");
           const s87a = termState(inst.id, "87a");
+
           if (active) {
             // routed to 87
-            if (s87a.hasPower) { isBackfeed = true; backfeedTerminals.push(`${inst.id}.87a`); }
+            if (s87a.hasPower && !s30.hasPower) { isBackfeed = true; backfeedTerminals.push(`${inst.id}.87a`); }
           } else {
-            // routed to 87a (for SPDT)
-            if (s87.hasPower) { isBackfeed = true; backfeedTerminals.push(`${inst.id}.87`); }
+            // routed to 87a (for SPDT), or open for 4pin
+            if (inst.kind === "relay.spdt") {
+              if (s87.hasPower && !s30.hasPower) { isBackfeed = true; backfeedTerminals.push(`${inst.id}.87`); }
+            } else {
+              // 4pin
+              if (s87.hasPower) { isBackfeed = true; backfeedTerminals.push(`${inst.id}.87`); }
+            }
           }
         } else if (inst.kind === "ecu.trigger") {
           if (nextEcuEnabled.has(inst.id)) active = true;

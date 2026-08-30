@@ -26,6 +26,7 @@ export interface WiringNodeData extends Record<string, unknown> {
   simShorted?: boolean;
   simBackfeed?: boolean;
   simTerminalStates?: Record<string, NetState>;
+  simBackfeedTerminals?: string[];
 }
 
 export interface AssemblyNodeData extends Record<string, unknown> {

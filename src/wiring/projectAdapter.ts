@@ -126,6 +126,7 @@ export function buildWiringViewModel(
     const simShorted = simulationResult?.shortedComponents.includes(inst.id);
     const simBackfeed = simulationResult?.backfeedComponents.includes(inst.id);
     const simTerminalStates = simulationResult?.terminalStates;
+    const simBackfeedTerminals = simulationResult?.backfeedTerminals;
 
     return {
       id: inst.id,
@@ -143,6 +144,7 @@ export function buildWiringViewModel(
         simShorted,
         simBackfeed,
         simTerminalStates,
+        simBackfeedTerminals,
       },
     };
   });
