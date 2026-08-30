@@ -83,7 +83,7 @@ describe("buildWiringViewModel priority styling", () => {
       backfeedTerminals: []
     };
 
-    const vm = buildWiringViewModel(project, { nodes: {} }, { "w1": { continuity: "open" } }, undefined, null, simRes as any);
+    const vm = buildWiringViewModel(project, { nodes: {} }, { "w1": { continuity: "open" } }, undefined, null, simRes as SimulationResult);
 
     const w1 = vm.edges.find(e => e.id === "w1")!;
     const w2 = vm.edges.find(e => e.id === "w2")!;

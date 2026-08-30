@@ -231,7 +231,7 @@ export function simulate(
           if (si.hasPower && !si.isShorted && sg.hasGround && !sg.isShorted) active = true;
         } else if (inst.kind === "flasher.2pin") {
           const sx = termState(inst.id, "x");
-          const sl = termState(inst.id, "l");
+
           // Flasher is active when receiving power and grounded through a load, but we don't strictly require ground direct connection
           // For simplicity, it's active if x has power.
           if (sx.hasPower && !sx.isShorted) active = true;
