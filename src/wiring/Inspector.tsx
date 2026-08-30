@@ -4,14 +4,14 @@ import { getDefaultControl } from "../domain/simulation/simulator";
 import { ProjectDocument, WorkspaceSelection, ComponentInstance, Wire, Assembly, CircuitIntent, AssignmentSource, AssemblyKind } from "../domain/types";
 import { catalog } from "../catalog/components";
 import { WireDiagnostics, WireDiagnostic } from "./model";
-import { SimulationState, SimulationResult } from "../domain/simulation/types";
+import { SimulationControl, SimulationState, SimulationResult } from "../domain/simulation/types";
 
 export interface InspectorProps {
   project: ProjectDocument;
   selection: WorkspaceSelection;
   diagnostics?: WireDiagnostics;
   simulationControls?: SimulationState;
-  onSimulationControlChange?: (id: string, patch: Record<string, unknown>) => void;
+  onSimulationControlChange?: (id: string, patch: Partial<SimulationControl>, kind: string) => void;
   simulationResult?: SimulationResult;
   onUpdateInstance: (instanceId: string, patch: Partial<Omit<ComponentInstance, "id">>) => void;
   onDeleteInstance: (instanceId: string) => void;
@@ -425,7 +425,7 @@ export const Inspector: React.FC<InspectorProps> = ({
                               type="checkbox"
                               checked={control.closed}
                               disabled={readOnly}
-                              onChange={(e) => onSimulationControlChange?.(instance.id, { closed: e.target.checked })}
+                              onChange={(e) => onSimulationControlChange?.(instance.id, { closed: e.target.checked }, instance.kind)}
                               className="w-4 h-4 text-black border-2 border-black rounded-none focus:ring-black"
                               aria-label="Toggle closed state"
                             />
@@ -439,7 +439,7 @@ export const Inspector: React.FC<InspectorProps> = ({
                               type="checkbox"
                               checked={control.kind === "protection" ? control.tripped : control.enabled}
                               disabled={readOnly}
-                              onChange={(e) => onSimulationControlChange?.(instance.id, control.kind === "protection" ? { tripped: e.target.checked } : { enabled: e.target.checked })}
+                              onChange={(e) => onSimulationControlChange?.(instance.id, control.kind === "protection" ? { tripped: e.target.checked } : { enabled: e.target.checked }, instance.kind)}
                               className="w-4 h-4 text-black border-2 border-black rounded-none focus:ring-black"
                               aria-label={control.kind === "protection" ? "Toggle tripped state" : "Toggle enabled state"}
                             />
@@ -455,7 +455,7 @@ export const Inspector: React.FC<InspectorProps> = ({
                             <select
                               value={control.position}
                               disabled={readOnly}
-                              onChange={(e) => onSimulationControlChange?.(instance.id, { position: e.target.value })}
+                              onChange={(e) => onSimulationControlChange?.(instance.id, { position: e.target.value as 'low' | 'high' | 'off' | 'acc' | 'ign' | 'st' }, instance.kind)}
                               className="w-full px-2 py-1.5 border-2 border-black bg-white focus:outline-none text-xs disabled:bg-gray-100"
                               aria-label="SPDT Position"
                             >
@@ -473,7 +473,7 @@ export const Inspector: React.FC<InspectorProps> = ({
                             <select
                               value={control.position}
                               disabled={readOnly}
-                              onChange={(e) => onSimulationControlChange?.(instance.id, { position: e.target.value })}
+                              onChange={(e) => onSimulationControlChange?.(instance.id, { position: e.target.value as 'low' | 'high' | 'off' | 'acc' | 'ign' | 'st' }, instance.kind)}
                               className="w-full px-2 py-1.5 border-2 border-black bg-white focus:outline-none text-xs disabled:bg-gray-100"
                               aria-label="Ignition Position"
                             >

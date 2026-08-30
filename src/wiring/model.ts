@@ -12,7 +12,7 @@ export interface WireDiagnostic {
 
 export type WireDiagnostics = Record<string, WireDiagnostic>;
 
-import { NetState, SimulationResult, SimulationState } from "../domain/simulation/types";
+import { NetState, SimulationControl, SimulationResult, SimulationState } from "../domain/simulation/types";
 
 export interface WiringNodeData extends Record<string, unknown> {
   id: string;
@@ -97,7 +97,7 @@ export type WiringDiagramProps = BaseWiringDiagramProps & {
   diagnostics?: WireDiagnostics;
   onDiagnosticChange?: (wireId: string, diagnostic: WireDiagnostic) => void;
   simulationControls?: SimulationState;
-  onSimulationControlChange?: (id: string, patch: Record<string, unknown>) => void;
+  onSimulationControlChange?: (id: string, patch: Partial<SimulationControl>, kind: string) => void;
   simulationResult?: SimulationResult;
 };
 

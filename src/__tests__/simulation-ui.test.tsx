@@ -37,7 +37,7 @@ describe("Inspector Simulation UI", () => {
     expect(checkbox.checked).toBe(false);
 
     fireEvent.click(checkbox);
-    expect(handleChange).toHaveBeenCalledWith("sw1", { closed: true });
+    expect(handleChange).toHaveBeenCalledWith("sw1", { closed: true }, "switch.toggle");
   });
 
   it("respects readOnly mode", () => {
