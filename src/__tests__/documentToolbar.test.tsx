@@ -390,4 +390,31 @@ describe("DocumentToolbar Component", () => {
     // replaceActiveProject must NEVER be called by presentation-only export actions
     expect(replaceMock).not.toHaveBeenCalled();
   });
+
+  it("exposes Export SVG and Print Studio from the File menu dropdown as well", () => {
+    const openPrintStudioMock = vi.fn();
+    const svgSpy = vi.spyOn(exportUtils, "exportSchematicAsSvg").mockImplementation(() => {});
+
+    render(
+      <DocumentToolbar
+        project={mockProject}
+        activeFile={{ name: "test.wiring.json" }}
+        savedFingerprint="baseline-fp"
+        replaceActiveProject={vi.fn()}
+        onOpenPrintPreview={openPrintStudioMock}
+        getCanvasBounds={() => ({ width: 900, height: 700 } as DOMRect)}
+      />
+    );
+
+    fireEvent.click(screen.getByTestId("file-dropdown-button"));
+    expect(screen.getByTestId("menu-item-file-print-studio")).toBeInTheDocument();
+    expect(screen.getByTestId("menu-item-file-export-svg")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByTestId("menu-item-file-print-studio"));
+    expect(openPrintStudioMock).toHaveBeenCalledTimes(1);
+
+    fireEvent.click(screen.getByTestId("file-dropdown-button"));
+    fireEvent.click(screen.getByTestId("menu-item-file-export-svg"));
+    expect(svgSpy).toHaveBeenCalledWith(mockProject, { width: 900, height: 700 });
+  });
 });

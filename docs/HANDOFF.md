@@ -69,3 +69,10 @@
 - Use Object.create(NULL) for the layout map to prevent prototype pollution
 - Inject elkInstance into wiring requests instead of a global import
 - Detect dropped nodes after layout before falling back
+
+## [2026-08-30T00:58:12.396Z] feat(export): add auto-scaling and readability warning for dense schemat
+
+- Add canvas export with a density cap (max 1.0) so large layouts fit
+- Show an auto-scale banner when the layout is too dense (>55% of bounds)
+- Escape all SVG text via `escapeXml` to prevent broken XML from special chars
+- Include revision number in each sheet's subtitle for version tracking

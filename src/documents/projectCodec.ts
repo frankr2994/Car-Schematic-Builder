@@ -10,18 +10,25 @@ export const DEFAULT_PROJECT_FILENAME = "untitled-project.wiring.json";
  * guarding against reserved Windows names and empty strings, and ensuring
  * the requested extension (default: .wiring.json).
  */
-export function sanitizeFilename(name?: string, extension: string = ".wiring.json"): string {
+export function sanitizeFilename(name?: string, extension?: string): string {
+  const defaultExt = extension !== undefined ? extension : ".wiring.json";
   if (!name || typeof name !== "string") {
-    return `untitled-project${extension}`;
+    return `untitled-project${defaultExt}`;
   }
 
   let cleaned = name.trim();
+  const targetExt = defaultExt;
 
-  // If already ends with .wiring.json or .json, strip extension first to sanitize base name
-  if (cleaned.toLowerCase().endsWith(".wiring.json")) {
-    cleaned = cleaned.slice(0, -12);
-  } else if (cleaned.toLowerCase().endsWith(".json")) {
-    cleaned = cleaned.slice(0, -5);
+  if (targetExt !== "") {
+    if (cleaned.toLowerCase().endsWith(targetExt.toLowerCase())) {
+      cleaned = cleaned.slice(0, -targetExt.length);
+    } else if (targetExt === ".wiring.json") {
+      if (cleaned.toLowerCase().endsWith(".wiring.json")) {
+        cleaned = cleaned.slice(0, -12);
+      } else if (cleaned.toLowerCase().endsWith(".json")) {
+        cleaned = cleaned.slice(0, -5);
+      }
+    }
   }
 
   // Strip illegal filesystem characters: / \ : * ? " < > | and control characters
@@ -33,7 +40,7 @@ export function sanitizeFilename(name?: string, extension: string = ".wiring.jso
     cleaned = `project-${cleaned || "untitled"}`;
   }
 
-  return `${cleaned}${extension}`;
+  return `${cleaned}${targetExt}`;
 }
 
 /**

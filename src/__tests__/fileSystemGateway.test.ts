@@ -307,5 +307,33 @@ describe("FileSystemGateway", () => {
       expect(sanitizeFilename("custom.json")).toBe("custom.wiring.json");
       expect(sanitizeFilename("already.wiring.json")).toBe("already.wiring.json");
     });
+
+    it("enforces .wiring.json extension when project names end in export extensions (.svg, .png, .pdf)", () => {
+      expect(sanitizeFilename("diagram.svg")).toBe("diagram.svg.wiring.json");
+      expect(sanitizeFilename("diagram.png")).toBe("diagram.png.wiring.json");
+      expect(sanitizeFilename("schematic.pdf")).toBe("schematic.pdf.wiring.json");
+      expect(sanitizeFilename("diagram.svg", ".wiring.json")).toBe("diagram.svg.wiring.json");
+    });
+
+    it("respects explicit target extensions for export paths", () => {
+      expect(sanitizeFilename("schematic", ".svg")).toBe("schematic.svg");
+      expect(sanitizeFilename("schematic.svg", ".svg")).toBe("schematic.svg");
+      expect(sanitizeFilename("schematic", ".png")).toBe("schematic.png");
+      expect(sanitizeFilename("schematic.png", ".png")).toBe("schematic.png");
+      expect(sanitizeFilename("schematic.svg", "")).toBe("schematic.svg");
+      expect(sanitizeFilename("export_file.wiring.json", "")).toBe("export_file.wiring.json");
+    });
+
+    it("saveProjectFile enforces .wiring.json extension even if project name ends in .svg", async () => {
+      delete (window as unknown as { showSaveFilePicker?: unknown }).showSaveFilePicker;
+      const result = await saveProjectFile('{"id":"p1"}', {
+        filename: "diagram.svg",
+      });
+
+      expect(result.status).toBe("success");
+      if (result.status === "success") {
+        expect(result.filename).toBe("diagram.svg.wiring.json");
+      }
+    });
   });
 });
