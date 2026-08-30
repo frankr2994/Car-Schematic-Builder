@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import { compileTemplate } from "../compiler/compiler";
 import { templates } from "../catalog/components";
 import { buildWiringViewModel, WiringLayoutResult } from "../wiring";
+import { SimulationResult } from "../domain/simulation/types";
 
 describe("Wiring Project Adapter & View Model Builder", () => {
   const sampleProject = compileTemplate(templates[0]);
