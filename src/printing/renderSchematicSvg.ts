@@ -6,8 +6,9 @@ import { WIRING_THEME, calculateNodeHeight, calculateTerminalRowCenter, calculat
 /**
  * Escapes XML/SVG special characters.
  */
-function escapeXml(unsafe: string): string {
-  return unsafe.replace(/[<>&'"]/g, (c) => {
+function escapeXml(unsafe?: string | null): string {
+  if (unsafe == null) return "";
+  return String(unsafe).replace(/[<>&'"]/g, (c) => {
     switch (c) {
       case "<": return "&lt;";
       case ">": return "&gt;";
@@ -231,10 +232,11 @@ export function renderSchematicSvg(
   // Scale / Readability warning watermark if present
   let watermarkSvg = "";
   if (sheet.readabilityWarning) {
+    const bannerW = Math.min(Math.max(width - 2 * gridMargin - titleBlockWidth - 30, 450), width - 2 * gridMargin - 20);
     watermarkSvg = `
       <g transform="translate(${gridMargin + 10}, ${height - gridMargin - 15})">
-        <rect width="450" height="24" fill="#fee2e2" stroke="#dc2626" stroke-width="1" />
-        <text x="8" y="16" font-family="monospace" font-size="8.5" font-weight="bold" fill="#991b1b">⚠️ READABILITY NOTICE: Scaled to ${Math.round(scaleFactor * 100)}% (Multi-sheet recommended)</text>
+        <rect width="${bannerW}" height="24" fill="#fee2e2" stroke="#dc2626" stroke-width="1" />
+        <text x="8" y="16" font-family="monospace" font-size="8.5" font-weight="bold" fill="#991b1b">⚠️ ${escapeXml(sheet.readabilityWarning)}</text>
       </g>
     `;
   }

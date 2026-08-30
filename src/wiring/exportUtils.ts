@@ -1,5 +1,5 @@
 import { ProjectDocument } from "../domain/types";
-import { SchematicSheetSpec } from "../printing/planSheets";
+import { SchematicSheetSpec, computeDiagramBounds } from "../printing/planSheets";
 import { renderSchematicSvg } from "../printing/renderSchematicSvg";
 
 import { downloadBlob, downloadText } from "../documents/fileSystemGateway";
@@ -28,7 +28,8 @@ export function exportProjectAsJson(
 
 /**
  * Generates an SVG string representation of the project schematic
- * cropped / sized according to canvas bounding client rect dimensions.
+ * cropped / sized according to canvas bounding client rect dimensions,
+ * computing appropriate scale factor to fit all diagram contents.
  */
 export function generateCanvasSvg(
   project: ProjectDocument,
@@ -37,10 +38,25 @@ export function generateCanvasSvg(
   const width = bounds && bounds.width > 0 ? Math.round(bounds.width) : 1100;
   const height = bounds && bounds.height > 0 ? Math.round(bounds.height) : 850;
 
+  const diagBounds = computeDiagramBounds(project.instances, project.layoutOverrides || {});
+  const printableWidth = Math.max(width - 80, 100);
+  const printableHeight = Math.max(height - 120, 100);
+  const scaleX = printableWidth / diagBounds.width;
+  const scaleY = printableHeight / diagBounds.height;
+  const scaleFactor = Math.min(scaleX, scaleY, 1.0);
+
+  let readabilityWarning: string | undefined;
+  if (scaleFactor < 0.55) {
+    readabilityWarning = `High component density: diagram scaled to ${Math.round(
+      scaleFactor * 100
+    )}%. Multi-sheet assembly export is recommended.`;
+  }
+
   const sheet: SchematicSheetSpec = {
     sheetIndex: 1,
     totalSheets: 1,
     title: project.metadata.name || "Schematic",
+    subtitle: project.metadata.revision ? `Rev ${project.metadata.revision}` : undefined,
     paperSize: "letter",
     width,
     height,
@@ -48,7 +64,8 @@ export function generateCanvasSvg(
     wires: project.wires,
     layoutOverrides: project.layoutOverrides || {},
     offPageRefs: new Map(),
-    scaleFactor: 1,
+    scaleFactor,
+    readabilityWarning,
   };
 
   return renderSchematicSvg(sheet, project);
