@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { buildWiringViewModel } from "../wiring/projectAdapter";
 import { ProjectDocument } from "../domain/types";
-import { SimulationResult, NetState } from "../domain/simulation/types";
+import { SimulationResult } from "../domain/simulation/types";
 
 describe("Simulation UI Integration", () => {
   it("buildWiringViewModel sets sim-active indicator on node data", () => {

@@ -1,4 +1,4 @@
-import { ProjectDocument, Wire } from "../types";
+import { ProjectDocument } from "../types";
 import { SimulationControl, SimulationState, SimulationResult, NetState } from "./types";
 import { WireDiagnostics } from "../../wiring/model";
 
@@ -22,7 +22,6 @@ export function simulate(
   const history = new Set<string>();
   let V = "";
 
-  const instMap = new Map(project.instances.map(i => [i.id, i]));
 
   // Endpoint normalization
   const validWires = project.wires.filter(w => !diagnostics[w.id]?.continuity || diagnostics[w.id].continuity !== "open").map(w => {

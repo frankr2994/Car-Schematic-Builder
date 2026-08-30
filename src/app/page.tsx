@@ -45,7 +45,7 @@ import { ActiveFileMetadata, ReplaceProjectOptions } from "../documents/types";
 import { isProjectDirty } from "../documents/projectCodec";
 import { createReplaceActiveProject } from "../documents/replaceProject";
 import { simulate } from "../domain/simulation/simulator";
-import { SimulationControl, SimulationState } from "../domain/simulation/types";
+import { SimulationState } from "../domain/simulation/types";
 
 export default function Home() {
   const [project, setProject] = useState<ProjectDocument | null>(null);
@@ -592,7 +592,7 @@ export default function Home() {
               diagnostics={diagnostics}
               onDiagnosticChange={handleDiagnosticChange}
               simulationControls={simulationControls as SimulationState}
-              onSimulationControlChange={(id, patch) => setSimulationControls((prev: any) => ({ ...prev, [id]: { ...prev[id], ...patch } }))}
+              onSimulationControlChange={(id, patch) => setSimulationControls((prev: SimulationState) => ({ ...prev, [id]: { ...prev[id], ...patch } }))}
               simulationResult={simulationResult}
               selectedElement={selection}
               onSelectionChange={setSelection}
@@ -607,7 +607,7 @@ export default function Home() {
               selection={selection}
               diagnostics={diagnostics}
               simulationControls={simulationControls as SimulationState}
-              onSimulationControlChange={(id, patch) => setSimulationControls((prev: any) => ({ ...prev, [id]: { ...prev[id], ...patch } }))}
+              onSimulationControlChange={(id, patch) => setSimulationControls((prev: SimulationState) => ({ ...prev, [id]: { ...prev[id], ...patch } }))}
               simulationResult={simulationResult}
               onUpdateInstance={handleUpdateInstance}
               onDeleteInstance={handleDeleteInstance}
