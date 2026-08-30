@@ -1,13 +1,18 @@
 "use client";
 import React, { useState } from "react";
+import { getDefaultControl } from "../domain/simulation/simulator";
 import { ProjectDocument, WorkspaceSelection, ComponentInstance, Wire, Assembly, CircuitIntent, AssignmentSource, AssemblyKind } from "../domain/types";
 import { catalog } from "../catalog/components";
 import { WireDiagnostics, WireDiagnostic } from "./model";
+import { SimulationState, SimulationResult } from "../domain/simulation/types";
 
 export interface InspectorProps {
   project: ProjectDocument;
   selection: WorkspaceSelection;
   diagnostics?: WireDiagnostics;
+  simulationControls?: SimulationState;
+  onSimulationControlChange?: (id: string, patch: Record<string, unknown>) => void;
+  simulationResult?: SimulationResult;
   onUpdateInstance: (instanceId: string, patch: Partial<Omit<ComponentInstance, "id">>) => void;
   onDeleteInstance: (instanceId: string) => void;
   onUpdateWire: (wireId: string, patch: Partial<Omit<Wire, "id">>) => void;
@@ -53,6 +58,9 @@ export const Inspector: React.FC<InspectorProps> = ({
   project,
   selection,
   diagnostics = {},
+  simulationControls = {},
+  onSimulationControlChange,
+  simulationResult,
   onUpdateInstance,
   onDeleteInstance,
   onUpdateWire,
@@ -390,6 +398,95 @@ export const Inspector: React.FC<InspectorProps> = ({
                       ))}
                     </select>
                   </div>
+
+                  {(() => {
+                    const control = simulationControls[instance.id] || getDefaultControl(instance.kind);
+                    if (!control) return null;
+                    const isActive = simulationResult?.activeComponents.includes(instance.id);
+                    const isShorted = simulationResult?.shortedComponents.includes(instance.id);
+                    const isBackfeed = simulationResult?.backfeedComponents.includes(instance.id);
+
+                    return (
+                      <div className="bg-gray-50 border-2 border-black p-3 space-y-3">
+                        <div className="flex justify-between items-center border-b border-gray-300 pb-2">
+                          <span className="text-[10px] uppercase font-bold text-gray-700">Simulation Control</span>
+                          {isShorted ? (
+                            <span className="px-2 py-0.5 bg-fuchsia-600 text-white text-[9px] font-bold uppercase">Status: Shorted</span>
+                          ) : isBackfeed ? (
+                            <span className="px-2 py-0.5 bg-orange-500 text-white text-[9px] font-bold uppercase">Status: Backfeed</span>
+                          ) : isActive ? (
+                            <span className="px-2 py-0.5 bg-green-600 text-white text-[9px] font-bold uppercase">Status: Energized</span>
+                          ) : null}
+                        </div>
+
+                        {control.kind === "toggle" && (
+                          <label className="flex items-center gap-2 cursor-pointer text-xs font-bold text-gray-900">
+                            <input
+                              type="checkbox"
+                              checked={control.closed}
+                              disabled={readOnly}
+                              onChange={(e) => onSimulationControlChange?.(instance.id, { closed: e.target.checked })}
+                              className="w-4 h-4 text-black border-2 border-black rounded-none focus:ring-black"
+                              aria-label="Toggle closed state"
+                            />
+                            Toggle Switch Closed
+                          </label>
+                        )}
+
+                        {(control.kind === "source" || control.kind === "protection") && (
+                          <label className="flex items-center gap-2 cursor-pointer text-xs font-bold text-gray-900">
+                            <input
+                              type="checkbox"
+                              checked={control.kind === "protection" ? control.tripped : control.enabled}
+                              disabled={readOnly}
+                              onChange={(e) => onSimulationControlChange?.(instance.id, control.kind === "protection" ? { tripped: e.target.checked } : { enabled: e.target.checked })}
+                              className="w-4 h-4 text-black border-2 border-black rounded-none focus:ring-black"
+                              aria-label={control.kind === "protection" ? "Toggle tripped state" : "Toggle enabled state"}
+                            />
+                            {control.kind === "protection" ? "Protection Tripped" : "Enabled / Powered"}
+                          </label>
+                        )}
+
+                        {control.kind === "spdt" && (
+                          <div>
+                            <label className="block text-[10px] uppercase font-bold text-gray-700 mb-1">
+                              SPDT Position
+                            </label>
+                            <select
+                              value={control.position}
+                              disabled={readOnly}
+                              onChange={(e) => onSimulationControlChange?.(instance.id, { position: e.target.value })}
+                              className="w-full px-2 py-1.5 border-2 border-black bg-white focus:outline-none text-xs disabled:bg-gray-100"
+                              aria-label="SPDT Position"
+                            >
+                              <option value="low">Low (1-2)</option>
+                              <option value="high">High (1-3)</option>
+                            </select>
+                          </div>
+                        )}
+
+                        {control.kind === "ignition" && (
+                          <div>
+                            <label className="block text-[10px] uppercase font-bold text-gray-700 mb-1">
+                              Ignition Position
+                            </label>
+                            <select
+                              value={control.position}
+                              disabled={readOnly}
+                              onChange={(e) => onSimulationControlChange?.(instance.id, { position: e.target.value })}
+                              className="w-full px-2 py-1.5 border-2 border-black bg-white focus:outline-none text-xs disabled:bg-gray-100"
+                              aria-label="Ignition Position"
+                            >
+                              <option value="off">OFF</option>
+                              <option value="acc">ACC</option>
+                              <option value="ign">IGN (ON)</option>
+                              <option value="st">START</option>
+                            </select>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })()}
 
                   {project.assemblies.length > 0 && onAssignMember && onRemoveMember && (
                     <div>

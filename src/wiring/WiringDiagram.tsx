@@ -42,6 +42,7 @@ function FlowController({
   onSelectionChange,
   readOnly = false,
   focusCircuit = null,
+  simulationResult,
 }: WiringDiagramProps) {
   const [internalDiagnostics, setInternalDiagnostics] = useState<WireDiagnostics>({});
   const [internalSelection, setInternalSelection] = useState<WorkspaceSelection>(null);
@@ -144,9 +145,10 @@ function FlowController({
       layoutResult,
       currentDiagnostics,
       readOnly ? undefined : handleToggleDiagnostic,
-      focusCircuit
+      focusCircuit,
+      simulationResult
     );
-  }, [project, layoutResult, currentDiagnostics, readOnly, handleToggleDiagnostic, focusCircuit]);
+  }, [project, layoutResult, currentDiagnostics, readOnly, handleToggleDiagnostic, focusCircuit, simulationResult]);
 
 
   // Apply transient drag positions and selection states to rendered nodes

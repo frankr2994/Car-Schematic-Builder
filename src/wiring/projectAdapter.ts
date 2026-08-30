@@ -10,6 +10,7 @@ import {
 } from "./model";
 import { WIRING_THEME, calculateNodeHeight, calculateFallbackNodePosition } from "./theme";
 import { CircuitTraceResult } from "../domain/traceCircuit";
+import { SimulationResult } from "../domain/simulation/types";
 
 function createLayoutNodeForInstance(
   inst: ProjectDocument["instances"][0],
@@ -90,7 +91,8 @@ export function buildWiringViewModel(
   layoutResult: WiringLayoutResult,
   diagnostics: WireDiagnostics = {},
   onToggleDiagnostic?: (wireId: string) => void,
-  focusCircuit?: CircuitTraceResult | null
+  focusCircuit?: CircuitTraceResult | null,
+  simulationResult?: SimulationResult
 ): WiringViewModel {
   const nodeLookup = layoutResult.nodes || {};
 
@@ -120,6 +122,11 @@ export function buildWiringViewModel(
       focusedComponentSet && !focusedComponentSet.has(inst.id)
     );
 
+    const simActive = simulationResult?.activeComponents.includes(inst.id);
+    const simShorted = simulationResult?.shortedComponents.includes(inst.id);
+    const simBackfeed = simulationResult?.backfeedComponents.includes(inst.id);
+    const simTerminalStates = simulationResult?.terminalStates;
+
     return {
       id: inst.id,
       type: "component",
@@ -132,6 +139,10 @@ export function buildWiringViewModel(
         terminals: def.terminals,
         assemblyId: instanceToAssembly.get(inst.id),
         isDimmed,
+        simActive,
+        simShorted,
+        simBackfeed,
+        simTerminalStates,
       },
     };
   });
@@ -148,20 +159,26 @@ export function buildWiringViewModel(
     const isUnknown = diagnostic.continuity === "unknown";
 
     const wireColor = wire.color || wire.colorCode || WIRING_THEME.colors.defaultWire;
-    const strokeColor = isFault
-      ? WIRING_THEME.colors.diagnostics.open
-      : isUnknown
-      ? WIRING_THEME.colors.diagnostics.unknown
-      : wireColor;
-
-    const strokeDasharray =
-      diagnostic.continuity === "open"
-        ? WIRING_THEME.dashPatterns.open
-        : diagnostic.continuity === "unknown"
-        ? WIRING_THEME.dashPatterns.unknown
-        : WIRING_THEME.dashPatterns.normal;
-
     const isDimmed = Boolean(focusedWireSet && !focusedWireSet.has(wire.id));
+    const sim = simulationResult?.wireStates[wire.id];
+
+
+    let strokeColor = wireColor;
+    let strokeDasharray = WIRING_THEME.dashPatterns.normal;
+
+    if (isFault) {
+      strokeColor = WIRING_THEME.colors.diagnostics.open;
+      strokeDasharray = WIRING_THEME.dashPatterns.open;
+    } else if (isUnknown) {
+      strokeColor = WIRING_THEME.colors.diagnostics.unknown;
+      strokeDasharray = WIRING_THEME.dashPatterns.unknown;
+    } else if (sim?.isShorted) {
+      strokeColor = "#ff00ff"; // Magenta
+    } else if (sim?.hasPower) {
+      strokeColor = "#ef4444"; // Red
+    } else if (sim?.hasGround) {
+      strokeColor = "#22c55e"; // Green
+    }
 
     return {
       id: wire.id,
@@ -186,6 +203,7 @@ export function buildWiringViewModel(
         onToggleDiagnostic,
         readOnly: !onToggleDiagnostic,
         isDimmed,
+        simulation: sim,
       },
       style: {
         stroke: strokeColor,

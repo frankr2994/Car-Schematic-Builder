@@ -8,9 +8,14 @@ export const ComponentNode: React.FC<NodeProps> = ({ data, selected }) => {
   const nodeData = data as unknown as WiringNodeData;
   const isDimmed = nodeData.isDimmed ?? false;
 
+  let simClass = "";
+  if (nodeData.simShorted) simClass = "sim-shorted";
+  else if (nodeData.simBackfeed) simClass = "sim-backfeed";
+  else if (nodeData.simActive) simClass = "sim-active";
+
   return (
     <div
-      className={`wiring-component-node ${selected ? "selected" : ""} ${isDimmed ? "opacity-30 grayscale" : ""}`}
+      className={`wiring-component-node ${selected ? "selected" : ""} ${isDimmed ? "opacity-30 grayscale" : ""} ${simClass}`}
       tabIndex={0}
       role="region"
       aria-label={`Component ${nodeData.name}, zone ${nodeData.zone}`}
@@ -26,6 +31,13 @@ export const ComponentNode: React.FC<NodeProps> = ({ data, selected }) => {
           const isOutput = t.direction === "source";
           const topPosition = calculateTerminalRowCenter(i);
 
+          const tState = nodeData.simTerminalStates?.[`${nodeData.id}.${t.key}`];
+          let hClass = "";
+          if (tState?.isShorted) hClass = "term-shorted";
+          else if (nodeData.simBackfeed && nodeData.simTerminalStates?.[`${nodeData.id}.${t.key}`]?.hasPower) hClass = "term-backfeed";
+          else if (tState?.hasPower) hClass = "term-powered";
+          else if (tState?.hasGround) hClass = "term-grounded";
+
           return (
             <div
               key={t.key}
@@ -34,6 +46,7 @@ export const ComponentNode: React.FC<NodeProps> = ({ data, selected }) => {
             >
               {!isOutput && <span className="wiring-terminal-label mr-1">{t.key}</span>}
               <Handle
+                className={hClass}
                 type={isOutput ? "source" : "target"}
                 position={isOutput ? Position.Right : Position.Left}
                 id={t.key}

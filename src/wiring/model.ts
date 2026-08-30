@@ -12,6 +12,8 @@ export interface WireDiagnostic {
 
 export type WireDiagnostics = Record<string, WireDiagnostic>;
 
+import { NetState, SimulationResult, SimulationState } from "../domain/simulation/types";
+
 export interface WiringNodeData extends Record<string, unknown> {
   id: string;
   name: string;
@@ -20,6 +22,10 @@ export interface WiringNodeData extends Record<string, unknown> {
   terminals: PortDefinition[];
   assemblyId?: string;
   isDimmed?: boolean;
+  simActive?: boolean;
+  simShorted?: boolean;
+  simBackfeed?: boolean;
+  simTerminalStates?: Record<string, NetState>;
 }
 
 export interface AssemblyNodeData extends Record<string, unknown> {
@@ -58,6 +64,7 @@ export interface WiringEdgeData extends Record<string, unknown> {
   onToggleDiagnostic?: (wireId: string) => void;
   readOnly?: boolean;
   isDimmed?: boolean;
+  simulation?: NetState & { hasBackfeed?: boolean };
 }
 
 export interface WiringEdgeViewModel {
@@ -89,5 +96,8 @@ export interface BaseWiringDiagramProps {
 export type WiringDiagramProps = BaseWiringDiagramProps & {
   diagnostics?: WireDiagnostics;
   onDiagnosticChange?: (wireId: string, diagnostic: WireDiagnostic) => void;
+  simulationControls?: SimulationState;
+  onSimulationControlChange?: (id: string, patch: Record<string, unknown>) => void;
+  simulationResult?: SimulationResult;
 };
 

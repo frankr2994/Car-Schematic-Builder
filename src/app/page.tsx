@@ -44,6 +44,8 @@ import { DocumentToolbar } from "../components/DocumentToolbar";
 import { ActiveFileMetadata, ReplaceProjectOptions } from "../documents/types";
 import { isProjectDirty } from "../documents/projectCodec";
 import { createReplaceActiveProject } from "../documents/replaceProject";
+import { simulate } from "../domain/simulation/simulator";
+import { SimulationControl, SimulationState } from "../domain/simulation/types";
 
 export default function Home() {
   const [project, setProject] = useState<ProjectDocument | null>(null);
@@ -51,8 +53,14 @@ export default function Home() {
   const [savedFingerprint, setSavedFingerprint] = useState<string | null>(null);
   const [currentProjectId, setCurrentProjectId] = useState<string>("project-1.json");
   const [diagnostics, setDiagnostics] = useState<WireDiagnostics>({});
+  const [simulationControls, setSimulationControls] = useState<Partial<SimulationState> | Record<string, unknown>>({});
   const [selection, setSelection] = useState<WorkspaceSelection>(null);
   const [activeTemplateId, setActiveTemplateId] = useState<string>(templates[0].id);
+
+  const simulationResult = useMemo(() => {
+    if (!project) return undefined;
+    return simulate(project, simulationControls as SimulationState, diagnostics);
+  }, [project, simulationControls, diagnostics]);
 
   // Document generation counter to prevent stale debounced writes
   const generationRef = useRef<number>(1);
@@ -93,6 +101,7 @@ export default function Home() {
         },
         setSavedFingerprint,
         setDiagnostics,
+        setSimulationControls,
         setSelection,
         setFocusCircuit,
         txManagerRef,
@@ -582,6 +591,9 @@ export default function Home() {
               onProjectChange={handleProjectChange}
               diagnostics={diagnostics}
               onDiagnosticChange={handleDiagnosticChange}
+              simulationControls={simulationControls as SimulationState}
+              onSimulationControlChange={(id, patch) => setSimulationControls((prev: any) => ({ ...prev, [id]: { ...prev[id], ...patch } }))}
+              simulationResult={simulationResult}
               selectedElement={selection}
               onSelectionChange={setSelection}
               focusCircuit={focusCircuit}
@@ -594,6 +606,9 @@ export default function Home() {
               project={project}
               selection={selection}
               diagnostics={diagnostics}
+              simulationControls={simulationControls as SimulationState}
+              onSimulationControlChange={(id, patch) => setSimulationControls((prev: any) => ({ ...prev, [id]: { ...prev[id], ...patch } }))}
+              simulationResult={simulationResult}
               onUpdateInstance={handleUpdateInstance}
               onDeleteInstance={handleDeleteInstance}
               onUpdateWire={handleUpdateWire}

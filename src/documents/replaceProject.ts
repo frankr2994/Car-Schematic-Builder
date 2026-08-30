@@ -56,8 +56,9 @@ export function createReplaceActiveProject(deps: ReplaceProjectDependencies) {
         deps.txManagerRef.current.reset(validatedProject);
       }
 
-      // Step 4: Clear diagnostics, selection, circuit focus
+      // Step 4: Clear diagnostics, simulation, selection, circuit focus
       deps.setDiagnostics?.({});
+      deps.setSimulationControls?.({});
       deps.setSelection?.(null);
       deps.setFocusCircuit?.(null);
 

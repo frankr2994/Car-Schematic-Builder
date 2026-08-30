@@ -1,6 +1,7 @@
 import { ProjectDocument, WorkspaceSelection } from "../domain/types";
 import { WireDiagnostics } from "../wiring/model";
 import { CircuitTraceResult } from "../domain/traceCircuit";
+import { SimulationState } from "../domain/simulation/types";
 
 export type DocumentOrigin =
   | "new"
@@ -104,6 +105,7 @@ export interface ReplaceProjectDependencies {
   setActiveFile: (activeFile: ActiveFileMetadata | null) => void;
   setSavedFingerprint: (fingerprint: string | null) => void;
   setDiagnostics?: (diagnostics: WireDiagnostics) => void;
+  setSimulationControls?: (controls: SimulationState) => void;
   setSelection?: (selection: WorkspaceSelection) => void;
   setFocusCircuit?: (circuit: CircuitTraceResult | null) => void;
   txManagerRef: { current: { reset: (project: ProjectDocument) => void; canUndo: () => boolean; canRedo: () => boolean } | null };
