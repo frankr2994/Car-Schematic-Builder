@@ -29,7 +29,7 @@ export function downloadBlob(blob: Blob, filename: string): void {
   if (typeof window === "undefined" || typeof document === "undefined") {
     return;
   }
-  const safeName = sanitizeFilename(filename);
+  const safeName = sanitizeFilename(filename, "");
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
@@ -52,7 +52,7 @@ export function downloadText(
   filename: string,
   mimeType: string = "application/json;charset=utf-8"
 ): void {
-  const safeName = sanitizeFilename(filename);
+  const safeName = sanitizeFilename(filename, "");
   const blob = new Blob([content], { type: mimeType });
   downloadBlob(blob, safeName);
 }
@@ -227,7 +227,7 @@ export async function showSaveFileHandle(
       showSaveFilePicker: (options?: unknown) => Promise<FileSystemFileHandle>;
     };
 
-    const safeName = sanitizeFilename(suggestedName);
+    const safeName = sanitizeFilename(suggestedName, ".wiring.json");
 
     const handle = await win.showSaveFilePicker({
       suggestedName: safeName,
@@ -271,7 +271,7 @@ export async function saveProjectFile(
   options: SaveProjectOptions = {}
 ): Promise<FileSaveResult> {
   const { filename = DEFAULT_PROJECT_FILENAME, handle, preferPicker = false } = options;
-  const safeFilename = sanitizeFilename(filename);
+  const safeFilename = sanitizeFilename(filename, ".wiring.json");
 
   if (handle && !preferPicker) {
     return writeToHandle(handle, content);
