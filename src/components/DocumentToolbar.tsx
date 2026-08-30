@@ -95,7 +95,9 @@ export const DocumentToolbar: React.FC<DocumentToolbarProps> = ({
         return false;
       }
 
-      const defaultName = activeFile?.name || sanitizeFilename(project.metadata.name || "untitled-project");
+      const defaultName =
+        activeFile?.name ||
+        sanitizeFilename(project.metadata.name || "untitled-project", ".wiring.json");
 
       if (activeFile?.handle && !forcePicker) {
         const saveResult = await saveProjectFile(json, {
@@ -313,6 +315,7 @@ export const DocumentToolbar: React.FC<DocumentToolbarProps> = ({
       onError?.("No active project to export.");
       return;
     }
+    setIsFileMenuOpen(false);
     setIsExportMenuOpen(false);
     try {
       const bounds = getCanvasBounds ? getCanvasBounds() : null;
@@ -329,6 +332,7 @@ export const DocumentToolbar: React.FC<DocumentToolbarProps> = ({
       onError?.("No active project to export.");
       return;
     }
+    setIsFileMenuOpen(false);
     setIsExportMenuOpen(false);
     try {
       setIsExportingPng(true);
@@ -366,7 +370,7 @@ export const DocumentToolbar: React.FC<DocumentToolbarProps> = ({
             <div
               role="menu"
               data-testid="file-dropdown-menu"
-              className="absolute left-0 mt-1 w-52 bg-white border-2 border-black shadow-xl z-50 divide-y divide-gray-200 text-xs"
+              className="absolute left-0 mt-1 w-56 bg-white border-2 border-black shadow-xl z-50 divide-y divide-gray-200 text-xs"
             >
               <div className="py-1">
                 <button
@@ -427,6 +431,35 @@ export const DocumentToolbar: React.FC<DocumentToolbarProps> = ({
                 >
                   <span>💾</span>
                   <span>Save As...</span>
+                </button>
+              </div>
+
+              <div className="py-1 bg-gray-50">
+                {onOpenPrintPreview && (
+                  <button
+                    type="button"
+                    role="menuitem"
+                    data-testid="menu-item-file-print-studio"
+                    onClick={() => {
+                      setIsFileMenuOpen(false);
+                      onOpenPrintPreview();
+                    }}
+                    className="w-full text-left px-3 py-2 hover:bg-gray-100 flex items-center gap-2 font-bold text-gray-800 cursor-pointer"
+                  >
+                    <span>🖨️</span>
+                    <span>Print & Export Studio...</span>
+                  </button>
+                )}
+
+                <button
+                  type="button"
+                  role="menuitem"
+                  data-testid="menu-item-file-export-svg"
+                  onClick={handleExportSvg}
+                  className="w-full text-left px-3 py-2 hover:bg-gray-100 flex items-center gap-2 font-bold text-gray-800 cursor-pointer"
+                >
+                  <span>📐</span>
+                  <span>Export SVG</span>
                 </button>
               </div>
             </div>
