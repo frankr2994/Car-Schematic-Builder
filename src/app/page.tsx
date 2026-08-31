@@ -17,11 +17,12 @@ import {
   AssignmentSource,
 } from "../domain/types";
 import { compileTemplate } from "../compiler/compiler";
-import { templates } from "../catalog/components";
+import { templates, CircuitTemplate } from "../catalog/components";
 import { storage } from "../storage/storage";
 import { TransactionManager } from "../domain/transactionManager";
 import {
   addInstance,
+  insertTemplate,
   updateInstance,
   deleteInstance,
   updateWire,
@@ -355,6 +356,15 @@ export default function Home() {
     }
   }, []);
 
+  const handleInsertTemplate = useCallback((template: CircuitTemplate) => {
+    if (!txManagerRef.current) return;
+    const res = txManagerRef.current.execute((proj) => insertTemplate(proj, template));
+
+    if (res.ok && res.project.instances.length > 0) {
+      setSelection({ kind: "component", id: res.project.instances[res.project.instances.length - 1].id });
+    }
+  }, []);
+
   const handleUpdateInstance = useCallback(
     (instanceId: string, patch: Partial<Omit<ComponentInstance, "id">>) => {
       txManagerRef.current?.execute((proj) => updateInstance(proj, instanceId, patch));
@@ -642,6 +652,7 @@ export default function Home() {
           onClose={() => setIsQuickAddOpen(false)}
           onAddComponent={handleAddComponent}
           onInsertRecipe={handleInsertRecipe}
+          onInsertTemplate={handleInsertTemplate}
         />
 
         {/* Print Preview Studio Modal */}

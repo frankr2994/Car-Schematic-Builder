@@ -1,6 +1,6 @@
 "use client";
 import React, { useState, useEffect, useMemo, useRef } from "react";
-import { catalog, ComponentDefinition } from "../catalog/components";
+import { catalog, ComponentDefinition, CircuitTemplate } from "../catalog/components";
 import { circuitRecipes, CircuitRecipe } from "../domain/circuitRecipes";
 
 export interface QuickAddProps {
@@ -8,22 +8,39 @@ export interface QuickAddProps {
   onClose: () => void;
   onAddComponent: (kind: string) => void;
   onInsertRecipe: (recipe: CircuitRecipe) => void;
+  onInsertTemplate: (template: CircuitTemplate) => void;
 }
 
 type QuickAddItem =
   | { type: "component"; item: ComponentDefinition; id: string; title: string; subtitle: string; category: string }
-  | { type: "recipe"; item: CircuitRecipe; id: string; title: string; subtitle: string; category: string };
+  | { type: "recipe"; item: CircuitRecipe; id: string; title: string; subtitle: string; category: string }
+  | { type: "template"; item: CircuitTemplate; id: string; title: string; subtitle: string; category: string };
 
 export const QuickAdd: React.FC<QuickAddProps> = ({
   isOpen,
   onClose,
   onAddComponent,
   onInsertRecipe,
+  onInsertTemplate,
 }) => {
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedIndex, setSelectedIndex] = useState(0);
-  const [filterType, setFilterType] = useState<"all" | "components" | "recipes">("all");
+  const [filterType, setFilterType] = useState<"all" | "components" | "recipes" | "templates">("all");
+  const [apiTemplates, setApiTemplates] = useState<CircuitTemplate[]>([]);
   const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (isOpen && apiTemplates.length === 0) {
+      fetch('/api/templates')
+        .then(res => res.json())
+        .then(data => {
+           if (data && Array.isArray(data.templates)) {
+              setApiTemplates(data.templates);
+           }
+        })
+        .catch(err => console.error("Failed to fetch templates", err));
+    }
+  }, [isOpen, apiTemplates.length]);
 
   // Focus input when opened
   useEffect(() => {
@@ -38,6 +55,18 @@ export const QuickAdd: React.FC<QuickAddProps> = ({
 
   const allItems = useMemo<QuickAddItem[]>(() => {
     const list: QuickAddItem[] = [];
+
+    // Add templates
+    apiTemplates.forEach((template) => {
+      list.push({
+        type: "template",
+        item: template,
+        id: `template_${template.id}`,
+        title: template.name,
+        subtitle: `${template.intent} (${template.components.length} components, ${template.connections.length} wires)`,
+        category: "Template",
+      });
+    });
 
     // Add circuit recipes
     circuitRecipes.forEach((recipe) => {
@@ -64,13 +93,14 @@ export const QuickAdd: React.FC<QuickAddProps> = ({
     });
 
     return list;
-  }, []);
+  }, [apiTemplates]);
 
   const filteredItems = useMemo(() => {
     const term = searchTerm.toLowerCase().trim();
     return allItems.filter((entry) => {
       if (filterType === "components" && entry.type !== "component") return false;
       if (filterType === "recipes" && entry.type !== "recipe") return false;
+      if (filterType === "templates" && entry.type !== "template") return false;
 
       if (!term) return true;
 
@@ -88,8 +118,10 @@ export const QuickAdd: React.FC<QuickAddProps> = ({
   const handleSelect = (item: QuickAddItem) => {
     if (item.type === "component") {
       onAddComponent(item.item.kind);
-    } else {
+    } else if (item.type === "recipe") {
       onInsertRecipe(item.item);
+    } else if (item.type === "template") {
+      onInsertTemplate(item.item);
     }
     onClose();
   };
@@ -143,18 +175,26 @@ export const QuickAdd: React.FC<QuickAddProps> = ({
         </div>
 
         {/* Filters */}
-        <div className="px-3 py-1.5 bg-gray-50 border-b border-gray-200 flex gap-2 text-xs">
+        <div className="px-3 py-1.5 bg-gray-50 border-b border-gray-200 flex gap-2 text-xs overflow-x-auto scrollbar-thin">
           <button
             onClick={() => setFilterType("all")}
-            className={`px-2 py-0.5 font-bold uppercase transition-colors ${
+            className={`px-2 py-0.5 font-bold uppercase transition-colors whitespace-nowrap ${
               filterType === "all" ? "bg-black text-white" : "text-gray-600 hover:bg-gray-200"
             }`}
           >
             All ({allItems.length})
           </button>
           <button
+            onClick={() => setFilterType("templates")}
+            className={`px-2 py-0.5 font-bold uppercase transition-colors whitespace-nowrap ${
+              filterType === "templates" ? "bg-black text-white" : "text-gray-600 hover:bg-gray-200"
+            }`}
+          >
+            Templates ({allItems.filter((i) => i.type === "template").length})
+          </button>
+          <button
             onClick={() => setFilterType("recipes")}
-            className={`px-2 py-0.5 font-bold uppercase transition-colors ${
+            className={`px-2 py-0.5 font-bold uppercase transition-colors whitespace-nowrap ${
               filterType === "recipes" ? "bg-black text-white" : "text-gray-600 hover:bg-gray-200"
             }`}
           >
@@ -162,7 +202,7 @@ export const QuickAdd: React.FC<QuickAddProps> = ({
           </button>
           <button
             onClick={() => setFilterType("components")}
-            className={`px-2 py-0.5 font-bold uppercase transition-colors ${
+            className={`px-2 py-0.5 font-bold uppercase transition-colors whitespace-nowrap ${
               filterType === "components" ? "bg-black text-white" : "text-gray-600 hover:bg-gray-200"
             }`}
           >

@@ -1,5 +1,6 @@
-import { catalog } from "../catalog/components";
+import { catalog, CircuitTemplate } from "../catalog/components";
 import { validateConnectionRules, ValidateCandidateParams } from "./connectionRules";
+import { compileTemplate } from "../compiler/compiler";
 import {
   ComponentInstance,
   ProjectDocument,
@@ -719,3 +720,32 @@ export function applyBatch(
   return { ok: true, project: validation.data };
 }
 
+export function insertTemplate(
+  project: ProjectDocument,
+  template: CircuitTemplate,
+  options?: { idFactory?: () => string }
+): EditResult {
+  try {
+    const updatedProject = compileTemplate(template, project, options);
+
+    // Validate the resulting project after inserting the template
+    const validation = parseProject(updatedProject);
+    if (!validation.success) {
+      return {
+        ok: false,
+        issues: validation.errors.map((e) => ({
+          code: e.code,
+          message: e.message,
+          path: e.path as (string | number)[],
+        })),
+      };
+    }
+
+    return { ok: true, project: validation.data };
+  } catch (err: unknown) {
+    return {
+      ok: false,
+      issues: [{ code: "TEMPLATE_COMPILE_ERROR", message: err instanceof Error ? err.message : String(err) }],
+    };
+  }
+}
