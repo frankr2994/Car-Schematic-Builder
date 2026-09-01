@@ -8,6 +8,7 @@ import {
   fingerprintProject,
   isProjectDirty,
 } from "../documents/projectCodec";
+import { parseProject } from "../domain/validation";
 import { createReplaceActiveProject } from "../documents/replaceProject";
 
 const sampleV3Project: ProjectDocument = {
@@ -36,6 +37,7 @@ const sampleV3Project: ProjectDocument = {
       gauge: "12",
     },
   ],
+  annotations: [],
   assemblies: [],
   circuits: [],
   layoutOverrides: {},
@@ -52,6 +54,7 @@ const secondProject: ProjectDocument = {
     { id: "lamp_1", kind: "lamp.incandescent", name: "Dome Light", zone: "Cabin" },
   ],
   wires: [],
+  annotations: [],
   assemblies: [],
   circuits: [],
   layoutOverrides: {},
@@ -162,10 +165,11 @@ describe("Unified Project Document Lifecycle", () => {
   // Requirement 3: Fingerprint behavior: edit -> dirty, undo back to saved content -> clean, successful Save -> clean, failed Save -> remains dirty
   describe("Fingerprint and Dirty State Tracking", () => {
     it("tracks dirty state accurately through mutations, undo/redo, and save actions", () => {
-      let activeProject = sampleV3Project;
-      let activeFingerprint: string | null = fingerprintProject(sampleV3Project);
+      const initialProject = (parseProject(sampleV3Project) as { success: true; data: ProjectDocument }).data;
+      let activeProject = initialProject;
+      let activeFingerprint: string | null = fingerprintProject(initialProject);
 
-      const txManager = new TransactionManager(sampleV3Project);
+      const txManager = new TransactionManager(initialProject);
       const txManagerRef = { current: txManager };
       const generationRef = { current: 1 };
 

@@ -4,6 +4,7 @@ import { compileTemplate } from "../compiler/compiler";
 
 // In-memory store for projects on the server
 const projectsMap = new Map<string, ProjectDocument>();
+const deletedIds = new Set<string>();
 
 export function seedDefaultProjects(): void {
   for (const tpl of templates) {
@@ -29,6 +30,8 @@ seedDefaultProjects();
 
 export const projectStore = {
   get: (id: string): ProjectDocument | undefined => {
+    if (deletedIds.has(id)) return undefined;
+
     let proj = projectsMap.get(id);
     if (proj) return proj;
 
@@ -54,12 +57,26 @@ export const projectStore = {
     return undefined;
   },
   set: (project: ProjectDocument): void => {
+    deletedIds.delete(project.id);
     projectsMap.set(project.id, project);
   },
   delete: (id: string): boolean => {
-    return projectsMap.delete(id);
+    if (deletedIds.has(id)) return false;
+
+    const exists =
+      projectsMap.has(id) ||
+      templates.some((t) => t.id === id || `${t.id}.wiring.json` === id || `${t.id}.json` === id) ||
+      id === "project-1.json" ||
+      id === "default";
+
+    if (!exists) return false;
+
+    deletedIds.add(id);
+    projectsMap.delete(id);
+    return true;
   },
   has: (id: string): boolean => {
+    if (deletedIds.has(id)) return false;
     if (projectsMap.has(id)) return true;
     return (
       templates.some((t) => t.id === id || `${t.id}.wiring.json` === id || `${t.id}.json` === id) ||
@@ -68,12 +85,14 @@ export const projectStore = {
     );
   },
   list: (): ProjectDocument[] => {
-    return Array.from(projectsMap.values());
+    return Array.from(projectsMap.values()).filter((p) => !deletedIds.has(p.id));
   },
   clear: (): void => {
     projectsMap.clear();
+    deletedIds.clear();
   },
   seedDefaults: (): void => {
+    deletedIds.clear();
     seedDefaultProjects();
   },
 };

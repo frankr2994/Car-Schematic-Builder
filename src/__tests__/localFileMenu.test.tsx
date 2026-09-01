@@ -61,6 +61,7 @@ const mockProject: ProjectDocument = {
   assemblies: [],
   circuits: [],
   layoutOverrides: {},
+  annotations: [],
 };
 
 function createMockContext(overrides?: Partial<ProjectWorkspaceContextType>): ProjectWorkspaceContextType {

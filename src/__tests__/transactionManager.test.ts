@@ -13,6 +13,7 @@ const baseProject: ProjectDocument = {
   assemblies: [],
   circuits: [],
   layoutOverrides: {},
+  annotations: [],
 };
 
 describe("TransactionManager", () => {

@@ -22,6 +22,7 @@ const emptyProject: ProjectDocument = {
   assemblies: [],
   circuits: [],
   layoutOverrides: {},
+  annotations: [],
 };
 
 describe("Deterministic Vector SVG Print Engine & Sheet Planner", () => {
@@ -105,6 +106,7 @@ describe("Deterministic Vector SVG Print Engine & Sheet Planner", () => {
         comp_left: { x: 0, y: 0, locked: false },
         comp_right: { x: 2400, y: 1800, locked: false },
       },
+      annotations: [],
     };
 
     const bounds = { width: 1100, height: 850 };
@@ -211,6 +213,7 @@ describe("Deterministic Vector SVG Print Engine & Sheet Planner", () => {
       assemblies: [],
       circuits: [],
       layoutOverrides: {},
+      annotations: [],
     };
 
     const svg1 = generateCanvasSvg(specialProject, { width: 1100, height: 850 });

@@ -15,6 +15,7 @@ const emptyProject: ProjectDocument = {
   assemblies: [],
   circuits: [],
   layoutOverrides: {},
+  annotations: [],
 };
 
 describe("Circuit Tracing & Isolation Engine", () => {
@@ -91,6 +92,7 @@ describe("Circuit Tracing & Isolation Engine", () => {
       assemblies: [],
       circuits: [],
       layoutOverrides: {},
+      annotations: [],
     };
 
     const trace = traceCircuit(unpoweredDoc, "lamp_1", "in");

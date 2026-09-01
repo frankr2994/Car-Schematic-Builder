@@ -5,7 +5,7 @@ import { buildWiringViewModel, WiringLayoutResult } from "../wiring";
 import { SimulationResult } from "../domain/simulation/types";
 
 describe("Wiring Project Adapter & View Model Builder", () => {
-  const sampleProject = compileTemplate(templates[0]);
+  const sampleProject = { ...compileTemplate(templates[0]), layoutOverrides: {} };
   const mockLayoutResult: WiringLayoutResult = {
     nodes: {
       [sampleProject.instances[0].id]: { id: sampleProject.instances[0].id, x: 50, y: 100, width: 150, height: 70 },
@@ -69,7 +69,8 @@ describe("buildWiringViewModel priority styling", () => {
       ],
       assemblies: [],
       circuits: [],
-      layoutOverrides: {}
+      layoutOverrides: {},
+      annotations: []
     };
 
     const simRes = {

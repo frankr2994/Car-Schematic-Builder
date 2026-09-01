@@ -32,7 +32,7 @@ export const AssemblySchema = z.object({
 export const LayoutOverrideSchema = z.object({
   x: z.number(),
   y: z.number(),
-  locked: z.boolean(),
+  locked: z.boolean().default(false),
 });
 
 export const ComponentInstanceSchema = z.object({
@@ -88,6 +88,65 @@ export const WireSchema = z.object({
   { message: "Wire must specify endpoints via source/target or a/b" }
 );
 
+export const AnnotationAnchorSchema = z.discriminatedUnion("kind", [
+  z.object({ kind: z.literal("component"), componentId: z.string().min(1) }),
+  z.object({ kind: z.literal("wire"), wireId: z.string().min(1) }),
+  z.object({ kind: z.literal("terminal"), componentId: z.string().min(1), terminalKey: z.string().min(1) }),
+  z.object({ kind: z.literal("canvas"), x: z.number(), y: z.number() }),
+]);
+
+export const AnnotationSeveritySchema = z.enum(["note", "warning", "fault"]);
+
+export const AnnotationTypeSchema = z.enum(["text", "hotspot"]);
+
+export const AnnotationSchema = z.object({
+  id: z.string().min(1),
+  type: AnnotationTypeSchema.optional(),
+  anchor: AnnotationAnchorSchema,
+  text: z.string().min(1),
+  severity: AnnotationSeveritySchema.optional().default("note"),
+  createdAt: z.string().optional(),
+  updatedAt: z.string().optional(),
+}).transform((data) => ({
+  ...data,
+  type: data.type || (data.anchor.kind === "canvas" ? "text" : "hotspot"),
+})).refine(
+  (data) => {
+    if (data.type === "text") {
+      return data.anchor.kind === "canvas";
+    }
+    if (data.type === "hotspot") {
+      return data.anchor.kind === "component" || data.anchor.kind === "wire" || data.anchor.kind === "terminal";
+    }
+    return true;
+  },
+  { message: "Text annotation requires canvas anchor; hotspot annotation requires component, wire, or terminal target." }
+);
+
+export const CircuitTemplateComponentSchema = z.object({
+  role: z.string().min(1),
+  kind: z.string().min(1),
+  name: z.string().optional(),
+  zone: z.string().min(1),
+});
+
+export const CircuitTemplateConnectionSchema = z.object({
+  fromRole: z.string().min(1),
+  toRole: z.string().min(1),
+});
+
+export const CircuitTemplateSchema = z.object({
+  id: z.string().min(1),
+  name: z.string().min(1),
+  intent: z.string().min(1),
+  category: z.string().optional(),
+  description: z.string().optional(),
+  tags: z.array(z.string()).optional(),
+  components: z.array(CircuitTemplateComponentSchema).min(1),
+  connections: z.array(CircuitTemplateConnectionSchema).default([]),
+  relativePositions: z.record(z.string(), z.object({ x: z.number(), y: z.number() })).optional(),
+});
+
 export const ProjectDocumentSchema = z.object({
   id: z.string().min(1),
   schemaVersion: z.literal("3.0"),
@@ -98,6 +157,8 @@ export const ProjectDocumentSchema = z.object({
   assemblies: z.array(AssemblySchema),
   circuits: z.array(CircuitIntentSchema),
   layoutOverrides: z.record(z.string(), LayoutOverrideSchema),
+  annotations: z.array(AnnotationSchema).default([]),
+  templates: z.array(CircuitTemplateSchema).optional().default([]),
 }).superRefine((data, ctx) => {
   const instanceIds = new Set<string>();
   for (const inst of data.instances) {
@@ -253,6 +314,158 @@ export const ProjectDocumentSchema = z.object({
           code: z.ZodIssueCode.custom,
           message: `Circuit '${circuit.id}' target terminal '${target.terminalKey}' not found on component '${inst.kind}'`,
         });
+      }
+    }
+  }
+
+  // Annotation validation
+  const annotationIds = new Set<string>();
+  for (const ann of data.annotations || []) {
+    if (annotationIds.has(ann.id)) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: `Duplicate annotation ID: ${ann.id}` });
+    }
+    annotationIds.add(ann.id);
+
+    const anchor = ann.anchor;
+    if (anchor.kind === "component") {
+      if (!instanceIds.has(anchor.componentId)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: `Annotation '${ann.id}' references missing component: ${anchor.componentId}`,
+        });
+      }
+    } else if (anchor.kind === "wire") {
+      if (!wireIds.has(anchor.wireId)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: `Annotation '${ann.id}' references missing wire: ${anchor.wireId}`,
+        });
+      }
+    } else if (anchor.kind === "terminal") {
+      const inst = data.instances.find((i) => i.id === anchor.componentId);
+      if (!inst) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: `Annotation '${ann.id}' references missing terminal component: ${anchor.componentId}`,
+        });
+      } else {
+        const cat = catalog[inst.kind];
+        const term = cat?.terminals.find((t) => t.key === anchor.terminalKey);
+        if (!term) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            message: `Annotation '${ann.id}' target terminal '${anchor.terminalKey}' not found on component '${inst.kind}'`,
+          });
+        }
+      }
+    }
+  }
+
+  // Template validation
+  const templateIds = new Set<string>();
+  for (const tpl of data.templates || []) {
+    if (templateIds.has(tpl.id)) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: `Duplicate template ID: ${tpl.id}` });
+    }
+    templateIds.add(tpl.id);
+
+    const templateRoles = new Set<string>();
+    const roleKindMap = new Map<string, string>();
+    for (const comp of tpl.components) {
+      if (templateRoles.has(comp.role)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: `Template '${tpl.id}' has duplicate role: ${comp.role}`,
+        });
+      }
+      templateRoles.add(comp.role);
+      roleKindMap.set(comp.role, comp.kind);
+
+      if (!catalog[comp.kind]) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: `Template '${tpl.id}' references unknown component kind: ${comp.kind}`,
+        });
+      }
+    }
+
+    for (const conn of tpl.connections || []) {
+      const fromParts = conn.fromRole.split(".");
+      const toParts = conn.toRole.split(".");
+
+      if (fromParts.length !== 2) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: `Template '${tpl.id}' malformed connection reference: ${conn.fromRole}`,
+        });
+        continue;
+      }
+      if (toParts.length !== 2) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: `Template '${tpl.id}' malformed connection reference: ${conn.toRole}`,
+        });
+        continue;
+      }
+
+      const [fromRole, fromPort] = fromParts;
+      const [toRole, toPort] = toParts;
+
+      if (!templateRoles.has(fromRole)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: `Template '${tpl.id}' connection source role not found: ${fromRole}`,
+        });
+        continue;
+      }
+      if (!templateRoles.has(toRole)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: `Template '${tpl.id}' connection target role not found: ${toRole}`,
+        });
+        continue;
+      }
+
+      const fromKind = roleKindMap.get(fromRole);
+      const toKind = roleKindMap.get(toRole);
+      const fromCat = fromKind ? catalog[fromKind] : undefined;
+      const toCat = toKind ? catalog[toKind] : undefined;
+
+      const fromPortDef = fromCat?.terminals.find((t) => t.key === fromPort);
+      const toPortDef = toCat?.terminals.find((t) => t.key === toPort);
+
+      if (!fromPortDef) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: `Template '${tpl.id}' source port '${fromPort}' not found on component '${fromKind}'`,
+        });
+      } else if (fromPortDef.direction !== "source") {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: `Template '${tpl.id}' source port '${fromPort}' must be a source direction`,
+        });
+      }
+
+      if (!toPortDef) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: `Template '${tpl.id}' target port '${toPort}' not found on component '${toKind}'`,
+        });
+      } else if (toPortDef.direction !== "target") {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: `Template '${tpl.id}' target port '${toPort}' must be a target direction`,
+        });
+      }
+
+      if (fromPortDef && toPortDef) {
+        const isCompatible = areRolesCompatible(fromPortDef.roles, toPortDef.roles);
+        if (!isCompatible) {
+          ctx.addIssue({
+            code: z.ZodIssueCode.custom,
+            message: `Template '${tpl.id}' roles do not intersect between '${conn.fromRole}' and '${conn.toRole}'`,
+          });
+        }
       }
     }
   }

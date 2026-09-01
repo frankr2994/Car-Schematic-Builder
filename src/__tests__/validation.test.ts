@@ -133,6 +133,7 @@ describe("Validation", () => {
       ],
       circuits: [],
       layoutOverrides: {},
+      annotations: [],
     };
     expect(parseProject(proj).success).toBe(false);
   });
@@ -180,6 +181,7 @@ describe("Validation", () => {
       layoutOverrides: {
         batt: { x: 0, y: 0, locked: true },
       },
+      annotations: [],
     };
     expect(parseProject(proj).success).toBe(true);
   });

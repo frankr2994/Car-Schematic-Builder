@@ -76,3 +76,12 @@
 - Show an auto-scale banner when the layout is too dense (>55% of bounds)
 - Escape all SVG text via `escapeXml` to prevent broken XML from special chars
 - Include revision number in each sheet's subtitle for version tracking
+
+## [2026-09-01T04:27:40.185Z] feat(wiring): add annotation layer, circuit templates and playback
+
+- Add text/hotspot annotations with severity levels to project schemas
+- Implement CRUD endpoints for annotations and a migration path preserving existing ones
+- Introduce CircuitTemplate for reusable layouts with category, description, and tags
+- Render an overlay of annotated nodes on the wiring canvas via AnnotationNode
+- Style faulted/active components with color-coded states (shorted, backfeed, powered)
+- Add simulation playback controls including a seek bar and per-tick fault highlighting

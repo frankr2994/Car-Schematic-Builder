@@ -1,0 +1,261 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "WiringProjectDocument",
+  "description": "Schema definition for wiring diagrams, annotations, simulation playback, and reusable circuit templates.",
+  "type": "object",
+  "required": ["id", "schemaVersion", "ruleSetVersion", "metadata", "instances", "wires"],
+  "properties": {
+    "id": {
+      "type": "string",
+      "description": "Unique identifier for the project document"
+    },
+    "schemaVersion": {
+      "type": "string",
+      "enum": ["3.0"],
+      "description": "Schema version indicator"
+    },
+    "ruleSetVersion": {
+      "type": "string",
+      "description": "Rule set version for validation"
+    },
+    "metadata": {
+      "type": "object",
+      "required": ["name"],
+      "properties": {
+        "name": { "type": "string" },
+        "author": { "type": "string" },
+        "date": { "type": "string" },
+        "revision": { "type": "string" }
+      }
+    },
+    "instances": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "kind", "name", "zone"],
+        "properties": {
+          "id": { "type": "string" },
+          "kind": { "type": "string" },
+          "name": { "type": "string" },
+          "zone": { "type": "string" }
+        }
+      }
+    },
+    "wires": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id"],
+        "properties": {
+          "id": { "type": "string" },
+          "sourceInstance": { "type": "string" },
+          "sourcePort": { "type": "string" },
+          "targetInstance": { "type": "string" },
+          "targetPort": { "type": "string" },
+          "a": {
+            "type": "object",
+            "required": ["instanceId", "terminalKey"],
+            "properties": {
+              "instanceId": { "type": "string" },
+              "terminalKey": { "type": "string" }
+            }
+          },
+          "b": {
+            "type": "object",
+            "required": ["instanceId", "terminalKey"],
+            "properties": {
+              "instanceId": { "type": "string" },
+              "terminalKey": { "type": "string" }
+            }
+          },
+          "color": { "type": "string" },
+          "colorCode": { "type": "string" },
+          "gauge": { "type": "string" },
+          "gaugeAwg": { "type": "number" },
+          "label": { "type": "string" },
+          "notes": { "type": "string" },
+          "lengthMm": { "type": "number" }
+        }
+      }
+    },
+    "assemblies": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "name", "kind", "zone", "origin", "members"],
+        "properties": {
+          "id": { "type": "string" },
+          "name": { "type": "string" },
+          "kind": {
+            "type": "string",
+            "enum": ["switch_panel", "fuse_relay_box", "ground_bus", "connector_group", "custom"]
+          },
+          "zone": { "type": "string" },
+          "origin": { "type": "string", "enum": ["auto", "manual"] },
+          "autoGroupKey": { "type": "string" },
+          "members": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": ["instanceId", "assignmentSource"],
+              "properties": {
+                "instanceId": { "type": "string" },
+                "assignmentSource": { "type": "string", "enum": ["auto", "manual"] }
+              }
+            }
+          },
+          "collapsed": { "type": "boolean" }
+        }
+      }
+    },
+    "circuits": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "name", "targets"],
+        "properties": {
+          "id": { "type": "string" },
+          "name": { "type": "string" },
+          "description": { "type": "string" },
+          "colorHint": { "type": "string" },
+          "recipeId": { "type": "string" },
+          "targets": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": ["instanceId", "terminalKey"],
+              "properties": {
+                "instanceId": { "type": "string" },
+                "terminalKey": { "type": "string" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "layoutOverrides": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "required": ["x", "y"],
+        "properties": {
+          "x": { "type": "number" },
+          "y": { "type": "number" },
+          "locked": { "type": "boolean" }
+        }
+      }
+    },
+    "annotations": {
+      "type": "array",
+      "description": "Interactive annotations layer containing text and hotspot callouts",
+      "items": {
+        "type": "object",
+        "required": ["id", "type", "anchor", "text"],
+        "properties": {
+          "id": { "type": "string" },
+          "type": { "type": "string", "enum": ["text", "hotspot"] },
+          "x": { "type": "number" },
+          "y": { "type": "number" },
+          "text": { "type": "string" },
+          "targetId": { "type": "string" },
+          "anchor": {
+            "type": "object",
+            "oneOf": [
+              {
+                "type": "object",
+                "required": ["kind", "componentId"],
+                "properties": {
+                  "kind": { "enum": ["component"] },
+                  "componentId": { "type": "string", "minLength": 1 }
+                }
+              },
+              {
+                "type": "object",
+                "required": ["kind", "wireId"],
+                "properties": {
+                  "kind": { "enum": ["wire"] },
+                  "wireId": { "type": "string", "minLength": 1 }
+                }
+              },
+              {
+                "type": "object",
+                "required": ["kind", "componentId", "terminalKey"],
+                "properties": {
+                  "kind": { "enum": ["terminal"] },
+                  "componentId": { "type": "string", "minLength": 1 },
+                  "terminalKey": { "type": "string", "minLength": 1 }
+                }
+              },
+              {
+                "type": "object",
+                "required": ["kind", "x", "y"],
+                "properties": {
+                  "kind": { "enum": ["canvas"] },
+                  "x": { "type": "number" },
+                  "y": { "type": "number" }
+                }
+              }
+            ]
+          },
+          "severity": { "type": "string", "enum": ["note", "warning", "fault"] },
+          "createdAt": { "type": "string" },
+          "updatedAt": { "type": "string" }
+        }
+      }
+    },
+    "templates": {
+      "type": "array",
+      "description": "Named copyable circuit template graphs",
+      "items": {
+        "type": "object",
+        "required": ["id", "name", "intent", "components", "connections"],
+        "properties": {
+          "id": { "type": "string" },
+          "name": { "type": "string" },
+          "intent": { "type": "string" },
+          "category": { "type": "string" },
+          "description": { "type": "string" },
+          "tags": {
+            "type": "array",
+            "items": { "type": "string" }
+          },
+          "components": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": ["role", "kind", "zone"],
+              "properties": {
+                "role": { "type": "string" },
+                "kind": { "type": "string" },
+                "name": { "type": "string" },
+                "zone": { "type": "string" }
+              }
+            }
+          },
+          "connections": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": ["fromRole", "toRole"],
+              "properties": {
+                "fromRole": { "type": "string" },
+                "toRole": { "type": "string" }
+              }
+            }
+          },
+          "relativePositions": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "object",
+              "required": ["x", "y"],
+              "properties": {
+                "x": { "type": "number" },
+                "y": { "type": "number" }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

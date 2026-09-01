@@ -10,6 +10,9 @@ import {
   CircuitIntent,
   ProjectMetadata,
   AssignmentSource,
+  Annotation,
+  AnnotationAnchor,
+  AnnotationSeverity,
 } from "./types";
 import { catalog } from "../catalog/components";
 
@@ -326,6 +329,76 @@ export function migrateProject(data: unknown): ProjectDocument {
     }
   }
 
+  // Migrate annotations
+  const rawAnnotations = Array.isArray(raw.annotations) ? raw.annotations : [];
+  const annotations: Annotation[] = [];
+  const wireIdSet = new Set(wires.map((w) => w.id));
+
+  for (const item of rawAnnotations) {
+    if (item && typeof item === "object") {
+      const a = item as Record<string, unknown>;
+      const annId = typeof a.id === "string" ? a.id : `ann_${crypto.randomUUID().slice(0, 8)}`;
+      const text = typeof a.text === "string" ? a.text : "";
+      if (!text) continue;
+      const severity = typeof a.severity === "string" && ["note", "warning", "fault"].includes(a.severity)
+        ? (a.severity as AnnotationSeverity)
+        : undefined;
+      const createdAt = typeof a.createdAt === "string" ? a.createdAt : new Date().toISOString();
+      const updatedAt = typeof a.updatedAt === "string" ? a.updatedAt : createdAt;
+
+      const anchorObj = a.anchor && typeof a.anchor === "object" ? (a.anchor as Record<string, unknown>) : undefined;
+      if (!anchorObj || typeof anchorObj.kind !== "string") continue;
+
+      let anchor: AnnotationAnchor | undefined;
+      if (anchorObj.kind === "component" && typeof anchorObj.componentId === "string" && instanceIdSet.has(anchorObj.componentId)) {
+        anchor = { kind: "component", componentId: anchorObj.componentId };
+      } else if (anchorObj.kind === "wire" && typeof anchorObj.wireId === "string" && wireIdSet.has(anchorObj.wireId)) {
+        anchor = { kind: "wire", wireId: anchorObj.wireId };
+      } else if (anchorObj.kind === "terminal" && typeof anchorObj.componentId === "string" && typeof anchorObj.terminalKey === "string" && instanceIdSet.has(anchorObj.componentId)) {
+        anchor = { kind: "terminal", componentId: anchorObj.componentId, terminalKey: anchorObj.terminalKey };
+      } else if (anchorObj.kind === "canvas" && typeof anchorObj.x === "number" && typeof anchorObj.y === "number") {
+        anchor = { kind: "canvas", x: anchorObj.x, y: anchorObj.y };
+      }
+
+      if (anchor) {
+        const inferredType = anchor.kind === "canvas" ? "text" : "hotspot";
+        const annType =
+          typeof a.type === "string" && (a.type === "text" || a.type === "hotspot")
+            ? (a.type as "text" | "hotspot")
+            : inferredType;
+
+        annotations.push({
+          id: annId,
+          type: annType,
+          anchor,
+          text,
+          severity,
+          createdAt,
+          updatedAt,
+        });
+      }
+    }
+  }
+
+  // Migrate templates
+  const rawTemplates = Array.isArray(raw.templates) ? raw.templates : [];
+  const templates: ProjectDocument["templates"] = [];
+
+  for (const item of rawTemplates) {
+    if (item && typeof item === "object") {
+      const t = item as Record<string, unknown>;
+      if (
+        typeof t.id === "string" &&
+        typeof t.name === "string" &&
+        typeof t.intent === "string" &&
+        Array.isArray(t.components) &&
+        Array.isArray(t.connections)
+      ) {
+        templates.push(t as unknown as NonNullable<ProjectDocument["templates"]>[0]);
+      }
+    }
+  }
+
   return {
     id,
     schemaVersion,
@@ -336,6 +409,8 @@ export function migrateProject(data: unknown): ProjectDocument {
     assemblies,
     circuits,
     layoutOverrides,
+    annotations,
+    templates,
   };
 }
 

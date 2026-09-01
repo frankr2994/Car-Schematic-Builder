@@ -77,7 +77,51 @@ export interface ProjectMetadata {
 export interface LayoutOverride {
   x: number;
   y: number;
-  locked: boolean;
+  locked?: boolean;
+}
+
+export type AnnotationAnchor =
+  | { kind: "component"; componentId: string }
+  | { kind: "wire"; wireId: string }
+  | { kind: "terminal"; componentId: string; terminalKey: string }
+  | { kind: "canvas"; x: number; y: number };
+
+export type AnnotationType = "text" | "hotspot";
+
+export interface CircuitTemplateComponent {
+  role: string;
+  kind: string;
+  name?: string;
+  zone: string;
+}
+
+export interface CircuitTemplateConnection {
+  fromRole: string;
+  toRole: string;
+}
+
+export interface CircuitTemplate {
+  id: string;
+  name: string;
+  intent: string;
+  category?: string;
+  description?: string;
+  tags?: string[];
+  components: CircuitTemplateComponent[];
+  connections: CircuitTemplateConnection[];
+  relativePositions?: Record<string, { x: number; y: number }>;
+}
+
+export type AnnotationSeverity = "note" | "warning" | "fault";
+
+export interface Annotation {
+  id: string;
+  type: AnnotationType;
+  anchor: AnnotationAnchor;
+  text: string;
+  severity?: AnnotationSeverity;
+  createdAt: string;
+  updatedAt: string;
 }
 
 export interface ProjectDocument {
@@ -90,6 +134,8 @@ export interface ProjectDocument {
   assemblies: Assembly[];
   circuits: CircuitIntent[];
   layoutOverrides: Record<string, LayoutOverride>;
+  annotations: Annotation[];
+  templates?: CircuitTemplate[];
 }
 
 export type ProjectDocumentV3 = ProjectDocument;
@@ -99,5 +145,7 @@ export type WorkspaceSelection =
   | { kind: "wire"; id: string }
   | { kind: "assembly"; id: string }
   | { kind: "circuit"; id: string }
+  | { kind: "annotation"; id: string }
   | null;
+
 

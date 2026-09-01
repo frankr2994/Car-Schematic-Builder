@@ -7,6 +7,8 @@ import { compileTemplate } from "../compiler/compiler";
 import { templates } from "../catalog/components";
 import { WiringDiagram } from "../wiring/WiringDiagram";
 import * as CanvasModule from "../wiring/WiringCanvas";
+import { parseProject } from "../domain/validation";
+import { addAnnotation } from "../domain/projectCommands";
 
 
 // Mock ResizeObserver for JSDOM
@@ -213,6 +215,50 @@ describe("Wiring Diagram Interactive Callbacks & Editing Lifecycle", () => {
     expect(handleSelectionChange).toHaveBeenCalledWith(null);
   });
 
+  it("executes onNodesDelete with annotation node and calls deleteAnnotation", () => {
+    let capturedProps: CanvasModule.WiringCanvasProps | undefined;
+    vi.spyOn(CanvasModule, "WiringCanvas").mockImplementation((props) => {
+      capturedProps = props;
+      return <div className="mock-wiring-canvas" />;
+    });
+
+    const project = getFreshProject();
+    const projectWithAnn = {
+      ...project,
+      annotations: [
+        {
+          id: "ann_123",
+          type: "text" as const,
+          anchor: { kind: "canvas" as const, x: 100, y: 100 },
+          text: "Canvas Note",
+          severity: "note" as const,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        },
+      ],
+    };
+
+    const handleProjectChange = vi.fn();
+    const handleSelectionChange = vi.fn();
+
+    render(
+      <WiringDiagram
+        project={projectWithAnn}
+        onProjectChange={handleProjectChange}
+        onSelectionChange={handleSelectionChange}
+      />
+    );
+
+    act(() => {
+      capturedProps?.onNodesDelete?.([{ id: "ann_123", type: "annotation" } as unknown as Node]);
+    });
+
+    expect(handleProjectChange).toHaveBeenCalledTimes(1);
+    const updatedProject = handleProjectChange.mock.calls[0][0];
+    expect(updatedProject.annotations.length).toBe(0);
+    expect(handleSelectionChange).toHaveBeenCalledWith(null);
+  });
+
   it("executes onEdgesDelete and removes the wire from onProjectChange", () => {
     let capturedProps: CanvasModule.WiringCanvasProps | undefined;
     vi.spyOn(CanvasModule, "WiringCanvas").mockImplementation((props) => {
@@ -320,5 +366,107 @@ describe("Wiring Diagram Interactive Callbacks & Editing Lifecycle", () => {
       });
     });
     expect(handleProjectChange).not.toHaveBeenCalled();
+  });
+
+  it("dispatches canvas annotation drags to updateAnnotation without corrupting layoutOverrides", () => {
+    let capturedProps: CanvasModule.WiringCanvasProps | undefined;
+    vi.spyOn(CanvasModule, "WiringCanvas").mockImplementation((props) => {
+      capturedProps = props;
+      return <div className="mock-wiring-canvas" />;
+    });
+
+    let project = getFreshProject();
+    const annRes = addAnnotation(project, {
+      id: "ann_canvas_drag_test",
+      anchor: { kind: "canvas", x: 100, y: 100 },
+      text: "Draggable canvas note",
+      severity: "note",
+    });
+    expect(annRes.ok).toBe(true);
+    if (!annRes.ok) return;
+    project = annRes.project;
+
+    const handleProjectChange = vi.fn();
+    render(
+      <WiringDiagram project={project} onProjectChange={handleProjectChange} />
+    );
+
+    expect(capturedProps?.onNodeDragStop).toBeDefined();
+
+    // Simulate dragging the annotation node to (350, 450)
+    const annotationNode: Node = {
+      id: "ann_canvas_drag_test",
+      type: "annotation",
+      position: { x: 350, y: 450 },
+      data: {},
+    };
+
+    act(() => {
+      capturedProps?.onNodeDragStop?.({} as React.MouseEvent, annotationNode);
+    });
+
+    expect(handleProjectChange).toHaveBeenCalledTimes(1);
+    const updatedProject = handleProjectChange.mock.calls[0][0];
+
+    // Verify annotation anchor was updated
+    const updatedAnn = updatedProject.annotations.find((a: { id: string }) => a.id === "ann_canvas_drag_test");
+    expect(updatedAnn?.anchor).toEqual({ kind: "canvas", x: 350, y: 450 });
+
+    // CRITICAL: Verify layoutOverrides was NOT corrupted with annotation ID
+    expect(updatedProject.layoutOverrides["ann_canvas_drag_test"]).toBeUndefined();
+
+    // Verify document validation passes
+    const val = parseProject(updatedProject);
+    expect(val.success).toBe(true);
+  });
+
+  it("highlights target component and wire when an annotation is selected", () => {
+    let capturedProps: CanvasModule.WiringCanvasProps | undefined;
+    vi.spyOn(CanvasModule, "WiringCanvas").mockImplementation((props) => {
+      capturedProps = props;
+      return <div className="mock-wiring-canvas" />;
+    });
+
+    let project = getFreshProject();
+    const lamp = project.instances.find((i) => i.kind === "lamp.incandescent")!;
+    const wire = project.wires[0];
+
+    const annRes1 = addAnnotation(project, {
+      id: "ann_lamp_hotspot",
+      anchor: { kind: "component", componentId: lamp.id },
+      text: "Lamp issue",
+    });
+    if (annRes1.ok) project = annRes1.project;
+
+    const annRes2 = addAnnotation(project, {
+      id: "ann_wire_hotspot",
+      anchor: { kind: "wire", wireId: wire.id },
+      text: "Wire check",
+    });
+    if (annRes2.ok) project = annRes2.project;
+
+    // 1. Select component annotation -> verify target component is highlighted (selected)
+    const { rerender } = render(
+      <WiringDiagram
+        project={project}
+        onProjectChange={vi.fn()}
+        selectedElement={{ kind: "annotation", id: "ann_lamp_hotspot" }}
+      />
+    );
+
+    const lampNode = capturedProps?.nodes.find((n) => n.id === lamp.id);
+    expect(lampNode?.selected).toBe(true);
+
+    // 2. Select wire annotation -> verify target wire is highlighted (selected)
+    rerender(
+      <WiringDiagram
+        project={project}
+        onProjectChange={vi.fn()}
+        selectedElement={{ kind: "annotation", id: "ann_wire_hotspot" }}
+      />
+    );
+
+    const wireEdge = capturedProps?.edges.find((e) => e.id === wire.id);
+    expect(wireEdge?.selected).toBe(true);
   });
 });

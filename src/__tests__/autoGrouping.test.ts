@@ -18,6 +18,7 @@ const testProject: ProjectDocument = {
   assemblies: [],
   circuits: [],
   layoutOverrides: {},
+  annotations: [],
 };
 
 describe("Auto-Grouping Engine", () => {

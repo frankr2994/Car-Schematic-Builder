@@ -22,6 +22,17 @@ export function projectCircuit(
     }
   }
 
+  const filteredAnnotations = (project.annotations || []).filter((ann) => {
+    const anchor = ann.anchor;
+    if (anchor.kind === "component" || anchor.kind === "terminal") {
+      return componentIdSet.has(anchor.componentId);
+    }
+    if (anchor.kind === "wire") {
+      return wireIdSet.has(anchor.wireId);
+    }
+    return false;
+  });
+
   return {
     id: `project_circuit_${trace.targetInstanceId}`,
     schemaVersion: "3.0",
@@ -37,5 +48,6 @@ export function projectCircuit(
     assemblies: [],
     circuits: [],
     layoutOverrides: filteredOverrides,
+    annotations: filteredAnnotations,
   };
 }

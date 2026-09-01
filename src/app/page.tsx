@@ -15,6 +15,9 @@ import {
   Assembly,
   CircuitIntent,
   AssignmentSource,
+  Annotation,
+  AnnotationAnchor,
+  AnnotationSeverity,
 } from "../domain/types";
 import { compileTemplate } from "../compiler/compiler";
 import { templates, CircuitTemplate } from "../catalog/components";
@@ -32,6 +35,9 @@ import {
   assignAssemblyMember,
   removeAssemblyMember,
   createCircuitIntent,
+  addAnnotation,
+  updateAnnotation,
+  deleteAnnotation,
 } from "../domain/projectCommands";
 import { CircuitRecipe } from "../domain/circuitRecipes";
 import { planCircuitInsertion, InsertionPlanResult } from "../domain/planCircuitInsertion";
@@ -45,8 +51,8 @@ import { DocumentToolbar } from "../components/DocumentToolbar";
 import { ActiveFileMetadata, ReplaceProjectOptions } from "../documents/types";
 import { isProjectDirty } from "../documents/projectCodec";
 import { createReplaceActiveProject } from "../documents/replaceProject";
-import { getDefaultControl, simulate } from "../domain/simulation/simulator";
-import { SimulationControl, SimulationState } from "../domain/simulation/types";
+import { getDefaultControl, simulateWithTrace } from "../domain/simulation/simulator";
+import { SimulationControl, SimulationState, SimulationResult, SimulationTraceResult } from "../domain/simulation/types";
 
 export default function Home() {
   const [project, setProject] = useState<ProjectDocument | null>(null);
@@ -55,6 +61,11 @@ export default function Home() {
   const [currentProjectId, setCurrentProjectId] = useState<string>("project-1.json");
   const [diagnostics, setDiagnostics] = useState<WireDiagnostics>({});
   const [simulationControls, setSimulationControls] = useState<SimulationState>({});
+
+  // Simulation playback state
+  const [playbackFrameIndex, setPlaybackFrameIndex] = useState<number>(0);
+  const [isPlaying, setIsPlaying] = useState<boolean>(false);
+  const [playbackSpeed, setPlaybackSpeed] = useState<number>(1);
 
   const handleSimulationControlChange = useCallback((id: string, patch: Partial<SimulationControl>, kind: string) => {
     setSimulationControls((prev) => {
@@ -68,10 +79,41 @@ export default function Home() {
   const [selection, setSelection] = useState<WorkspaceSelection>(null);
   const [activeTemplateId, setActiveTemplateId] = useState<string>(templates[0].id);
 
-  const simulationResult = useMemo(() => {
+  const simulationTrace = useMemo<SimulationTraceResult | undefined>(() => {
     if (!project) return undefined;
-    return simulate(project, simulationControls as SimulationState, diagnostics);
+    return simulateWithTrace(project, simulationControls as SimulationState, diagnostics);
   }, [project, simulationControls, diagnostics]);
+
+  const safePlaybackFrameIndex = useMemo(() => {
+    if (!simulationTrace || simulationTrace.frames.length === 0) return 0;
+    return Math.min(Math.max(0, playbackFrameIndex), simulationTrace.frames.length - 1);
+  }, [simulationTrace, playbackFrameIndex]);
+
+  const simulationResult = useMemo<SimulationResult | undefined>(() => {
+    if (!simulationTrace) return undefined;
+    const frames = simulationTrace.frames;
+    if (frames.length === 0) return simulationTrace.final;
+    return frames[safePlaybackFrameIndex]?.result || simulationTrace.final;
+  }, [simulationTrace, safePlaybackFrameIndex]);
+
+  // Autoplay playback timer
+  useEffect(() => {
+    if (!isPlaying || !simulationTrace) return;
+    const totalFrames = simulationTrace.frames.length;
+    if (totalFrames <= 1) return;
+
+    const interval = setInterval(() => {
+      setPlaybackFrameIndex((prev) => {
+        if (prev >= totalFrames - 1) {
+          setIsPlaying(false);
+          return prev;
+        }
+        return prev + 1;
+      });
+    }, Math.round(600 / playbackSpeed));
+
+    return () => clearInterval(interval);
+  }, [isPlaying, simulationTrace, playbackSpeed]);
 
   // Document generation counter to prevent stale debounced writes
   const generationRef = useRef<number>(1);
@@ -102,6 +144,8 @@ export default function Home() {
   // Unified replaceActiveProject lifecycle orchestrator
   const replaceActiveProject = useCallback(
     (next: ProjectDocument, options: ReplaceProjectOptions) => {
+      setIsPlaying(false);
+      setPlaybackFrameIndex(0);
       const runner = createReplaceActiveProject({
         setProject,
         setActiveFile: (file) => {
@@ -358,12 +402,43 @@ export default function Home() {
 
   const handleInsertTemplate = useCallback((template: CircuitTemplate) => {
     if (!txManagerRef.current) return;
-    const res = txManagerRef.current.execute((proj) => insertTemplate(proj, template));
+    const res = txManagerRef.current.execute((proj) =>
+      insertTemplate(proj, template, { createAssembly: true, createCircuitIntent: true })
+    );
 
     if (res.ok && res.project.instances.length > 0) {
       setSelection({ kind: "component", id: res.project.instances[res.project.instances.length - 1].id });
     }
   }, []);
+
+  const handleAddAnnotation = useCallback(
+    (params: { anchor: AnnotationAnchor; text: string; severity?: AnnotationSeverity }) => {
+      if (!txManagerRef.current) return;
+      const res = txManagerRef.current.execute((proj) => addAnnotation(proj, params));
+      if (res.ok && res.project.annotations) {
+        const lastAnn = res.project.annotations[res.project.annotations.length - 1];
+        if (lastAnn) {
+          setSelection({ kind: "annotation", id: lastAnn.id });
+        }
+      }
+    },
+    []
+  );
+
+  const handleUpdateAnnotation = useCallback(
+    (id: string, patch: Partial<Omit<Annotation, "id">>) => {
+      txManagerRef.current?.execute((proj) => updateAnnotation(proj, id, patch));
+    },
+    []
+  );
+
+  const handleDeleteAnnotation = useCallback(
+    (id: string) => {
+      txManagerRef.current?.execute((proj) => deleteAnnotation(proj, id));
+      setSelection((prev) => (prev?.kind === "annotation" && prev.id === id ? null : prev));
+    },
+    []
+  );
 
   const handleUpdateInstance = useCallback(
     (instanceId: string, patch: Partial<Omit<ComponentInstance, "id">>) => {
@@ -629,10 +704,20 @@ export default function Home() {
               simulationControls={simulationControls as SimulationState}
               onSimulationControlChange={handleSimulationControlChange}
               simulationResult={simulationResult}
+              simulationTrace={simulationTrace}
+              playbackFrameIndex={safePlaybackFrameIndex}
+              onPlaybackFrameChange={setPlaybackFrameIndex}
+              isPlaying={isPlaying}
+              onTogglePlay={() => setIsPlaying((p) => !p)}
+              playbackSpeed={playbackSpeed}
+              onChangePlaybackSpeed={setPlaybackSpeed}
               onUpdateInstance={handleUpdateInstance}
               onDeleteInstance={handleDeleteInstance}
               onUpdateWire={handleUpdateWire}
               onDeleteWire={handleDeleteWire}
+              onAddAnnotation={handleAddAnnotation}
+              onUpdateAnnotation={handleUpdateAnnotation}
+              onDeleteAnnotation={handleDeleteAnnotation}
               onDiagnosticChange={handleDiagnosticChange}
               onClose={() => setSelection(null)}
               onTraceComponent={handleTraceComponent}
@@ -642,6 +727,7 @@ export default function Home() {
               onCreateAssembly={handleCreateAssembly}
               onDeleteAssembly={handleDeleteAssembly}
               onSelectCircuit={handleSelectCircuit}
+              onSelectElement={setSelection}
             />
           </div>
         </main>
@@ -653,6 +739,8 @@ export default function Home() {
           onAddComponent={handleAddComponent}
           onInsertRecipe={handleInsertRecipe}
           onInsertTemplate={handleInsertTemplate}
+          projectId={currentProjectId}
+          projectTemplates={project?.templates || []}
         />
 
         {/* Print Preview Studio Modal */}

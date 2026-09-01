@@ -37,6 +37,7 @@ const mockProject: ProjectDocument = {
   assemblies: [],
   circuits: [],
   layoutOverrides: {},
+  annotations: [],
 };
 
 describe("DocumentToolbar Component", () => {

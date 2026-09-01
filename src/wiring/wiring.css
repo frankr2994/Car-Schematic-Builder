@@ -32,6 +32,44 @@
   outline-offset: 2px;
 }
 
+/* Simulation Fault & Active Highlights */
+.wiring-component-node.sim-shorted {
+  outline: 3px solid #dc2626 !important;
+  outline-offset: 2px;
+  box-shadow: 0 0 10px rgba(220, 38, 38, 0.6) !important;
+}
+
+.wiring-component-node.sim-backfeed {
+  outline: 3px dashed #ea580c !important;
+  outline-offset: 2px;
+}
+
+.wiring-component-node.sim-active {
+  outline: 2px solid #16a34a !important;
+  outline-offset: 2px;
+}
+
+/* Simulation Terminal Handle Highlights */
+.react-flow__handle.term-shorted {
+  background-color: #dc2626 !important;
+  border-color: #7f1d1d !important;
+}
+
+.react-flow__handle.term-backfeed {
+  background-color: #ea580c !important;
+  border-color: #7c2d12 !important;
+}
+
+.react-flow__handle.term-powered {
+  background-color: #2563eb !important;
+  border-color: #1e3a8a !important;
+}
+
+.react-flow__handle.term-grounded {
+  background-color: #16a34a !important;
+  border-color: #14532d !important;
+}
+
 .wiring-node-header {
   background-color: var(--wiring-node-header-bg, #e5e7eb);
   border-bottom: var(--wiring-node-border-width, 2px) solid var(--wiring-node-border, #000000);

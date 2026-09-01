@@ -14,6 +14,10 @@ describe("Compiler", () => {
     expect(project).toBeDefined();
     expect(project.instances.length).toBe(template.components.length);
     expect(project.wires.length).toBe(template.connections.length);
+    expect(project.instances[0].id).toBe("battery_test_id_0");
+    expect(project.instances[1].id).toBe("fuse_test_id_1");
+    expect(project.wires[0].id).toBe("wire_test_id_5");
+    expect(project.id).toBe("test_id_10");
     const res = parseProject(project);
     if (!res.success) console.log(JSON.stringify(res.errors, null, 2));
     expect(res.success).toBe(true);
@@ -62,5 +66,14 @@ describe("Compiler", () => {
       ]
     };
     expect(() => compileTemplate(badTemplate)).toThrowError("Roles do not intersect");
+  });
+
+  it("preserves non-default ruleSetVersion when compiling with existing project", () => {
+    const template = templates[0];
+    const existingProject = compileTemplate(template);
+    existingProject.ruleSetVersion = "2.5-custom";
+
+    const updated = compileTemplate(template, existingProject);
+    expect(updated.ruleSetVersion).toBe("2.5-custom");
   });
 });

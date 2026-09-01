@@ -10,6 +10,10 @@ import {
   CircuitIntent,
   ProjectMetadata,
   AssignmentSource,
+  Annotation,
+  AnnotationAnchor,
+  AnnotationSeverity,
+  AnnotationType,
 } from "./types";
 import { parseProject } from "./validation";
 
@@ -183,11 +187,16 @@ export function deleteWire(project: ProjectDocument, wireId: string): EditResult
     };
   }
 
+  const remainingAnnotations = (project.annotations || []).filter(
+    (a) => !(a.anchor.kind === "wire" && a.anchor.wireId === wireId)
+  );
+
   return {
     ok: true,
     project: {
       ...project,
       wires: project.wires.filter((w) => w.id !== wireId),
+      annotations: remainingAnnotations,
     },
   };
 }
@@ -211,6 +220,18 @@ export function deleteInstance(project: ProjectDocument, instanceId: string): Ed
   );
   const remainingOverrides = { ...project.layoutOverrides };
   delete remainingOverrides[instanceId];
+
+  const remainingWireIds = new Set(filteredWires.map((w) => w.id));
+
+  // Clean up annotations referencing this instance, its terminals, or cascade-removed wires
+  const remainingAnnotations = (project.annotations || []).filter(
+    (a) =>
+      !(
+        (a.anchor.kind === "component" && a.anchor.componentId === instanceId) ||
+        (a.anchor.kind === "terminal" && a.anchor.componentId === instanceId) ||
+        (a.anchor.kind === "wire" && !remainingWireIds.has(a.anchor.wireId))
+      )
+  );
 
   // Clean up assemblies: remove instance from members
   const updatedAssemblies: Assembly[] = [];
@@ -247,6 +268,7 @@ export function deleteInstance(project: ProjectDocument, instanceId: string): Ed
       assemblies: updatedAssemblies,
       circuits: updatedCircuits,
       layoutOverrides: remainingOverrides,
+      annotations: remainingAnnotations,
     },
   };
 }
@@ -723,7 +745,12 @@ export function applyBatch(
 export function insertTemplate(
   project: ProjectDocument,
   template: CircuitTemplate,
-  options?: { idFactory?: () => string }
+  options?: {
+    anchorPosition?: { x: number; y: number };
+    createAssembly?: boolean;
+    createCircuitIntent?: boolean;
+    idFactory?: () => string;
+  }
 ): EditResult {
   try {
     const updatedProject = compileTemplate(template, project, options);
@@ -749,3 +776,119 @@ export function insertTemplate(
     };
   }
 }
+
+/**
+ * Adds an annotation to the project document.
+ */
+export function addAnnotation(
+  project: ProjectDocument,
+  params: {
+    anchor: AnnotationAnchor;
+    text: string;
+    type?: AnnotationType;
+    severity?: AnnotationSeverity;
+    id?: string;
+    createdAt?: string;
+    updatedAt?: string;
+  }
+): EditResult {
+  const nextId = params.id || `ann_${crypto.randomUUID().slice(0, 8)}`;
+  if ((project.annotations || []).some((a) => a.id === nextId)) {
+    return {
+      ok: false,
+      issues: [{ code: "DUPLICATE_ANNOTATION_ID", message: `Annotation ID '${nextId}' already exists` }],
+    };
+  }
+
+  const now = new Date().toISOString();
+  const inferredType = params.anchor.kind === "canvas" ? "text" : "hotspot";
+  const newAnnotation: Annotation = {
+    id: nextId,
+    type: params.type || inferredType,
+    anchor: params.anchor,
+    text: params.text,
+    severity: params.severity || "note",
+    createdAt: params.createdAt || now,
+    updatedAt: params.updatedAt || now,
+  };
+
+  const updatedProject: ProjectDocument = {
+    ...project,
+    annotations: [...(project.annotations || []), newAnnotation],
+  };
+
+  const validation = parseProject(updatedProject);
+  if (!validation.success) {
+    return {
+      ok: false,
+      issues: validation.errors.map((e) => ({ code: e.code, message: e.message })),
+    };
+  }
+
+  return { ok: true, project: validation.data };
+}
+
+/**
+ * Updates an existing annotation in the project document.
+ */
+export function updateAnnotation(
+  project: ProjectDocument,
+  annotationId: string,
+  patch: Partial<Omit<Annotation, "id">>
+): EditResult {
+  const exists = (project.annotations || []).some((a) => a.id === annotationId);
+  if (!exists) {
+    return {
+      ok: false,
+      issues: [{ code: "ANNOTATION_NOT_FOUND", message: `Annotation '${annotationId}' not found` }],
+    };
+  }
+
+  const updatedProject: ProjectDocument = {
+    ...project,
+    annotations: (project.annotations || []).map((a) => {
+      if (a.id !== annotationId) return a;
+      return {
+        ...a,
+        ...patch,
+        id: a.id,
+        updatedAt: new Date().toISOString(),
+      };
+    }),
+  };
+
+  const validation = parseProject(updatedProject);
+  if (!validation.success) {
+    return {
+      ok: false,
+      issues: validation.errors.map((e) => ({ code: e.code, message: e.message })),
+    };
+  }
+
+  return { ok: true, project: validation.data };
+}
+
+/**
+ * Deletes an annotation from the project document.
+ */
+export function deleteAnnotation(
+  project: ProjectDocument,
+  annotationId: string
+): EditResult {
+  const exists = (project.annotations || []).some((a) => a.id === annotationId);
+  if (!exists) {
+    return {
+      ok: false,
+      issues: [{ code: "ANNOTATION_NOT_FOUND", message: `Annotation '${annotationId}' not found` }],
+    };
+  }
+
+  return {
+    ok: true,
+    project: {
+      ...project,
+      annotations: (project.annotations || []).filter((a) => a.id !== annotationId),
+    },
+  };
+}
+

@@ -129,5 +129,136 @@ describe("Component Palette & Property Inspector UI", () => {
       fireEvent.click(deleteBtn);
       expect(deleteWireSpy).toHaveBeenCalledWith(targetWire.id);
     });
+
+    it("renders annotation properties with rich target details, editing, and target inspection", () => {
+      const updateAnnSpy = vi.fn();
+      const deleteAnnSpy = vi.fn();
+      const selectElementSpy = vi.fn();
+      const targetInst = project.instances[0];
+
+      const projectWithAnn = {
+        ...project,
+        annotations: [
+          {
+            id: "ann_test_insp",
+            type: "hotspot" as const,
+            anchor: { kind: "component" as const, componentId: targetInst.id },
+            text: "Inspect bulb contact for corrosion",
+            severity: "fault" as const,
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+          },
+        ],
+      };
+
+      render(
+        <Inspector
+          project={projectWithAnn}
+          selection={{ kind: "annotation", id: "ann_test_insp" }}
+          onUpdateInstance={vi.fn()}
+          onDeleteInstance={vi.fn()}
+          onUpdateWire={vi.fn()}
+          onDeleteWire={vi.fn()}
+          onUpdateAnnotation={updateAnnSpy}
+          onDeleteAnnotation={deleteAnnSpy}
+          onSelectElement={selectElementSpy}
+        />
+      );
+
+      expect(screen.getByText("Annotation Inspector")).toBeInTheDocument();
+      // Target element info
+      expect(screen.getByText(targetInst.name)).toBeInTheDocument();
+      expect(screen.getByText(`Kind: ${targetInst.kind} • Zone: ${targetInst.zone}`)).toBeInTheDocument();
+
+      // Inspect target element button
+      const inspectTargetBtn = screen.getByRole("button", { name: "Inspect Component ↗" });
+      fireEvent.click(inspectTargetBtn);
+      expect(selectElementSpy).toHaveBeenCalledWith({ kind: "component", id: targetInst.id });
+
+      // Note text editing
+      const noteInput = screen.getByDisplayValue("Inspect bulb contact for corrosion");
+      fireEvent.change(noteInput, { target: { value: "Updated corrosion note" } });
+      expect(updateAnnSpy).toHaveBeenCalledWith("ann_test_insp", { text: "Updated corrosion note" });
+
+      // Severity selection
+      const sevSelect = screen.getByDisplayValue("Fault (Electrical Issue)");
+      fireEvent.change(sevSelect, { target: { value: "warning" } });
+      expect(updateAnnSpy).toHaveBeenCalledWith("ann_test_insp", { severity: "warning" });
+
+      // Delete annotation
+      const deleteBtn = screen.getByRole("button", { name: "Delete Annotation" });
+      fireEvent.click(deleteBtn);
+      expect(deleteAnnSpy).toHaveBeenCalledWith("ann_test_insp");
+    });
+
+    it("clamps out-of-range playbackFrameIndex cleanly in Inspector simulation playback", () => {
+      const freshProject = compileTemplate(templates[0]);
+      const mockTrace = {
+        final: {
+          wireStates: {},
+          terminalStates: {},
+          activeComponents: [],
+          shortedComponents: [],
+          backfeedComponents: [],
+          backfeedTerminals: [],
+        },
+        frames: [
+          {
+            tick: 0,
+            result: {
+              wireStates: {},
+              terminalStates: {},
+              activeComponents: [],
+              shortedComponents: [],
+              backfeedComponents: [],
+              backfeedTerminals: [],
+            },
+            events: [],
+            converged: true,
+          },
+          {
+            tick: 1,
+            result: {
+              wireStates: {},
+              terminalStates: {},
+              activeComponents: [],
+              shortedComponents: [],
+              backfeedComponents: [],
+              backfeedTerminals: [],
+            },
+            events: [],
+            converged: true,
+          },
+        ],
+        converged: true,
+      };
+
+      render(
+        <Inspector
+          project={freshProject}
+          selection={null}
+          onUpdateInstance={vi.fn()}
+          onDeleteInstance={vi.fn()}
+          onUpdateWire={vi.fn()}
+          onDeleteWire={vi.fn()}
+          simulationTrace={mockTrace}
+          playbackFrameIndex={999}
+          isPlaying={false}
+          onTogglePlay={vi.fn()}
+          onPlaybackFrameChange={vi.fn()}
+        />
+      );
+
+      // Click Sim tab
+      const simTabBtn = screen.getByRole("button", { name: /Sim/i });
+      fireEvent.click(simTabBtn);
+
+      // Frame counter should display clamped Frame 2 / 2 instead of Frame 1000 / 2
+      expect(screen.getByText("Frame 2 / 2")).toBeInTheDocument();
+      expect(screen.getByText("Tick 1")).toBeInTheDocument();
+
+      const scrubber = screen.getByLabelText("Simulation Frame Scrubber") as HTMLInputElement;
+      expect(scrubber.value).toBe("1");
+    });
   });
 });
