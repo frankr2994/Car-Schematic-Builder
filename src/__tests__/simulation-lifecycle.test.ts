@@ -24,7 +24,8 @@ describe("Simulation Lifecycle", () => {
       wires: [],
       assemblies: [],
       circuits: [],
-      layoutOverrides: {}
+      layoutOverrides: {},
+      annotations: []
     };
 
     // Load an existing file implies resetting UI state

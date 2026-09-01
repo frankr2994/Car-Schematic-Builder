@@ -16,7 +16,8 @@ describe("Simulation UI Integration", () => {
       wires: [],
       assemblies: [],
       circuits: [],
-      layoutOverrides: {}
+      layoutOverrides: {},
+      annotations: []
     };
 
     const simRes: SimulationResult = {
@@ -46,7 +47,8 @@ describe("Simulation UI Integration", () => {
       wires: [],
       assemblies: [],
       circuits: [],
-      layoutOverrides: {}
+      layoutOverrides: {},
+      annotations: []
     };
 
     const simRes: SimulationResult = {

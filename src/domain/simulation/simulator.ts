@@ -1,5 +1,13 @@
 import { ProjectDocument } from "../types";
-import { SimulationControl, SimulationState, SimulationResult, NetState } from "./types";
+import {
+  SimulationControl,
+  SimulationState,
+  SimulationResult,
+  NetState,
+  SimulationEvent,
+  SimulationFrame,
+  SimulationTraceResult,
+} from "./types";
 import { WireDiagnostics } from "../../wiring/model";
 
 export function getDefaultControl(kind: string): SimulationControl | undefined {
@@ -14,37 +22,283 @@ export function getDefaultControl(kind: string): SimulationControl | undefined {
 type TerminalRef = { instanceId: string; terminalKey: string };
 function toKey(r: TerminalRef) { return `${r.instanceId}.${r.terminalKey}`; }
 
-export function simulate(
+function computeIterationResult(
   project: ProjectDocument,
   controls: SimulationState,
-  diagnostics: WireDiagnostics
+  diagnostics: WireDiagnostics,
+  validWires: { id: string; a: TerminalRef; b: TerminalRef }[],
+  parent: Map<string, string>,
+  find: (i: string) => string,
+  nets: Map<string, string[]>,
+  netHasPower: Set<string>,
+  netHasGround: Set<string>,
+  nextRelayEnergized: Set<string>,
+  nextEcuEnabled: Set<string>,
+  nextAltEnabled: Set<string>,
+  error?: "oscillation"
 ): SimulationResult {
+  const wireStates: Record<string, NetState> = {};
+  const terminalStates: Record<string, NetState> = {};
+  const activeComponents: string[] = [];
+  const shortedComponents: string[] = [];
+  const backfeedComponents: string[] = [];
+  const backfeedTerminals: string[] = [];
+
+  const netStates = new Map<string, NetState>();
+  for (const root of nets.keys()) {
+    const hp = netHasPower.has(root);
+    const hg = netHasGround.has(root);
+    netStates.set(root, { hasPower: hp, hasGround: hg, isShorted: hp && hg });
+  }
+
+  for (const w of project.wires) {
+    const continuity = diagnostics[w.id]?.continuity;
+    if (continuity === "open" || continuity === "unknown") {
+      wireStates[w.id] = { hasPower: false, hasGround: false, isShorted: false };
+      continue;
+    }
+    const vW = validWires.find((vw) => vw.id === w.id);
+    if (vW) {
+      const root = find(toKey(vW.a));
+      wireStates[w.id] = netStates.get(root) || { hasPower: false, hasGround: false, isShorted: false };
+    }
+  }
+
+  for (const key of Array.from(parent.keys())) {
+    const root = find(key);
+    terminalStates[key] = netStates.get(root) || { hasPower: false, hasGround: false, isShorted: false };
+  }
+
+  const termState = (instId: string, tk: string) =>
+    terminalStates[`${instId}.${tk}`] || { hasPower: false, hasGround: false, isShorted: false };
+
+  for (const inst of project.instances) {
+    const c = controls[inst.id] ?? getDefaultControl(inst.kind);
+    let active = false;
+    let touchedByShort = false;
+    let isBackfeed = false;
+
+    const ts = Object.keys(terminalStates).filter((k) => k.startsWith(`${inst.id}.`));
+    for (const k of ts) {
+      if (terminalStates[k].isShorted) touchedByShort = true;
+    }
+
+    if (
+      inst.kind === "lamp.incandescent" ||
+      inst.kind === "pump.fuel" ||
+      inst.kind === "fan.electric" ||
+      inst.kind === "horn.dual"
+    ) {
+      const si = termState(inst.id, "in");
+      const sg = termState(inst.id, "ground");
+      if (si.hasPower && !si.isShorted && sg.hasGround && !sg.isShorted) active = true;
+    } else if (inst.kind === "flasher.2pin") {
+      const sx = termState(inst.id, "x");
+      if (sx.hasPower && !sx.isShorted) active = true;
+    } else if (inst.kind === "gauge.voltmeter") {
+      const si = termState(inst.id, "sense");
+      const sg = termState(inst.id, "ground");
+      if (si.hasPower && !si.isShorted && sg.hasGround && !sg.isShorted) active = true;
+    } else if (inst.kind === "motor.starter") {
+      const st = termState(inst.id, "st");
+      const bat = termState(inst.id, "bat");
+      const sg = termState(inst.id, "ground");
+      if (st.hasPower && !st.isShorted && bat.hasPower && !bat.isShorted && sg.hasGround && !sg.isShorted) active = true;
+    } else if (inst.kind === "relay.spdt" || inst.kind === "relay.4pin") {
+      if (nextRelayEnergized.has(inst.id)) active = true;
+      const s30 = termState(inst.id, "30");
+      const s87 = termState(inst.id, "87");
+      const s87a = termState(inst.id, "87a");
+
+      if (active) {
+        if (s87a.hasPower && !s30.hasPower) {
+          isBackfeed = true;
+          backfeedTerminals.push(`${inst.id}.87a`);
+        }
+      } else {
+        if (inst.kind === "relay.spdt") {
+          if (s87.hasPower && !s30.hasPower) {
+            isBackfeed = true;
+            backfeedTerminals.push(`${inst.id}.87`);
+          }
+        } else {
+          if (s87.hasPower) {
+            isBackfeed = true;
+            backfeedTerminals.push(`${inst.id}.87`);
+          }
+        }
+      }
+    } else if (inst.kind === "ecu.trigger") {
+      if (nextEcuEnabled.has(inst.id)) active = true;
+      if (!active) {
+        if (termState(inst.id, "trigger").hasPower) {
+          isBackfeed = true;
+          backfeedTerminals.push(`${inst.id}.trigger`);
+        }
+      }
+    } else if (inst.kind === "alternator.12v") {
+      if (nextAltEnabled.has(inst.id)) active = true;
+      if (!active && termState(inst.id, "b_plus").hasPower) {
+        isBackfeed = true;
+        backfeedTerminals.push(`${inst.id}.b_plus`);
+      }
+    } else if (inst.kind === "battery.12v") {
+      if (c?.kind === "source" && c.enabled) active = true;
+      if (!active && termState(inst.id, "pos").hasPower) {
+        isBackfeed = true;
+        backfeedTerminals.push(`${inst.id}.pos`);
+      }
+    } else if (inst.kind === "switch.toggle") {
+      if (c?.kind === "toggle" && !c.closed && termState(inst.id, "out").hasPower) {
+        isBackfeed = true;
+        backfeedTerminals.push(`${inst.id}.out`);
+      }
+    } else if (inst.kind === "switch.spdt") {
+      if (c?.kind === "spdt" && c.position === "low" && termState(inst.id, "high").hasPower) {
+        isBackfeed = true;
+        backfeedTerminals.push(`${inst.id}.high`);
+      } else if (c?.kind === "spdt" && c.position === "high" && termState(inst.id, "low").hasPower) {
+        isBackfeed = true;
+        backfeedTerminals.push(`${inst.id}.low`);
+      }
+    }
+
+    if (active) activeComponents.push(inst.id);
+    if (touchedByShort) shortedComponents.push(inst.id);
+    if (isBackfeed) backfeedComponents.push(inst.id);
+  }
+
+  return {
+    wireStates,
+    terminalStates,
+    activeComponents,
+    shortedComponents,
+    backfeedComponents,
+    backfeedTerminals,
+    error,
+  };
+}
+
+function computeEvents(
+  project: ProjectDocument,
+  diagnostics: WireDiagnostics,
+  currentResult: SimulationResult,
+  priorResult: SimulationResult | null,
+  tick: number
+): SimulationEvent[] {
+  const events: SimulationEvent[] = [];
+
+  // Open wire diagnostics on initial tick
+  if (tick === 0) {
+    for (const [wireId, diag] of Object.entries(diagnostics)) {
+      if (diag.continuity === "open") {
+        const wire = project.wires.find((w) => w.id === wireId);
+        events.push({
+          type: "fault-open",
+          target: { kind: "wire", id: wireId },
+          description: `Open circuit continuity fault on wire '${wire?.label || wireId}'`,
+        });
+      }
+    }
+  }
+
+  // Net energized
+  for (const [wireId, st] of Object.entries(currentResult.wireStates)) {
+    const priorSt = priorResult?.wireStates[wireId];
+    if (st.hasPower && (!priorSt || !priorSt.hasPower)) {
+      const wire = project.wires.find((w) => w.id === wireId);
+      events.push({
+        type: "net-energized",
+        target: { kind: "wire", id: wireId },
+        description: `Wire '${wire?.label || wireId}' energized with +12V`,
+      });
+    }
+  }
+
+  // Active components / relay changes
+  for (const compId of currentResult.activeComponents) {
+    if (!priorResult || !priorResult.activeComponents.includes(compId)) {
+      const inst = project.instances.find((i) => i.id === compId);
+      const isRelay = inst?.kind.startsWith("relay.");
+      if (isRelay) {
+        events.push({
+          type: "relay-changed",
+          target: { kind: "component", id: compId },
+          description: `Relay '${inst?.name || compId}' coil energized (switched to NO contact 30-87)`,
+        });
+      } else {
+        events.push({
+          type: "component-active",
+          target: { kind: "component", id: compId },
+          description: `Component '${inst?.name || compId}' energized and active`,
+        });
+      }
+    }
+  }
+
+  // Short detected
+  for (const compId of currentResult.shortedComponents) {
+    if (!priorResult || !priorResult.shortedComponents.includes(compId)) {
+      const inst = project.instances.find((i) => i.id === compId);
+      events.push({
+        type: "short-detected",
+        target: { kind: "component", id: compId },
+        description: `Dead short circuit detected at component '${inst?.name || compId}'`,
+      });
+    }
+  }
+
+  // Backfeed detected
+  for (const termKey of currentResult.backfeedTerminals) {
+    if (!priorResult || !priorResult.backfeedTerminals.includes(termKey)) {
+      const [instId, port] = termKey.split(".");
+      const inst = project.instances.find((i) => i.id === instId);
+      events.push({
+        type: "backfeed-detected",
+        target: { kind: "terminal", id: termKey },
+        description: `Backfeed voltage detected on terminal '${port}' of '${inst?.name || instId}'`,
+      });
+    }
+  }
+
+  if (currentResult.error === "oscillation") {
+    events.push({
+      type: "oscillation",
+      target: { kind: "component", id: "system" },
+      description: "Oscillation error: Relay feedback loop prevented solver convergence",
+    });
+  }
+
+  return events;
+}
+
+export function simulateWithTrace(
+  project: ProjectDocument,
+  controls: SimulationState = {},
+  diagnostics: WireDiagnostics = {}
+): SimulationTraceResult {
+  const safeDiagnostics = diagnostics || {};
   const history = new Set<string>();
   let V = "";
 
-
   // Endpoint normalization
-  const validWires = project.wires.filter(w => {
-    const c = diagnostics[w.id]?.continuity;
-    return c !== "open" && c !== "unknown";
-  }).map(w => {
-    return {
-      id: w.id,
-      a: w.a ?? { instanceId: w.sourceInstance, terminalKey: w.sourcePort },
-      b: w.b ?? { instanceId: w.targetInstance, terminalKey: w.targetPort }
-    };
-  });
+  const validWires = project.wires
+    .filter((w) => {
+      const c = safeDiagnostics[w.id]?.continuity;
+      return c !== "open" && c !== "unknown";
+    })
+    .map((w) => {
+      return {
+        id: w.id,
+        a: w.a ?? { instanceId: w.sourceInstance, terminalKey: w.sourcePort },
+        b: w.b ?? { instanceId: w.targetInstance, terminalKey: w.targetPort },
+      };
+    });
 
-  // Iteration limit
   const MAX_ITER = 20;
-
-  let wireStates: Record<string, NetState> = {};
-  let terminalStates: Record<string, NetState> = {};
-  let activeComponents: string[] = [];
-  let shortedComponents: string[] = [];
-  let backfeedComponents: string[] = [];
-  let backfeedTerminals: string[] = [];
-  let error: "oscillation" | undefined = undefined;
+  const frames: SimulationFrame[] = [];
+  let finalResult: SimulationResult | null = null;
+  let priorResult: SimulationResult | null = null;
 
   for (let iter = 0; iter < MAX_ITER; iter++) {
     const parent = new Map<string, string>();
@@ -77,23 +331,25 @@ export function simulate(
 
     // Component internal connections
     const currentV = V.split(",").filter(Boolean);
-    const relayEnergized = new Set(currentV.filter(v => v.startsWith("relay:")).map(v => v.split(":")[1]));
-    const ecuEnabled = new Set(currentV.filter(v => v.startsWith("ecu:")).map(v => v.split(":")[1]));
-    const altEnabled = new Set(currentV.filter(v => v.startsWith("alt:")).map(v => v.split(":")[1]));
+    const relayEnergized = new Set(currentV.filter((v) => v.startsWith("relay:")).map((v) => v.split(":")[1]));
+    const ecuEnabled = new Set(currentV.filter((v) => v.startsWith("ecu:")).map((v) => v.split(":")[1]));
+    const altEnabled = new Set(currentV.filter((v) => v.startsWith("alt:")).map((v) => v.split(":")[1]));
 
     for (const inst of project.instances) {
       const c = controls[inst.id] ?? getDefaultControl(inst.kind);
-
-      const link = (t1: string, t2: string) => union(toKey({instanceId: inst.id, terminalKey: t1}), toKey({instanceId: inst.id, terminalKey: t2}));
+      const link = (t1: string, t2: string) =>
+        union(toKey({ instanceId: inst.id, terminalKey: t1 }), toKey({ instanceId: inst.id, terminalKey: t2 }));
 
       if (inst.kind === "busbar.power") {
-        ["p1", "p2", "p3", "p4", "in"].forEach(t => link("in", t));
+        ["p1", "p2", "p3", "p4", "in"].forEach((t) => link("in", t));
       } else if (inst.kind === "busbar.ground") {
-        ["g1", "g2", "g3", "g4", "gnd"].forEach(t => link("gnd", t));
+        ["g1", "g2", "g3", "g4", "gnd"].forEach((t) => link("gnd", t));
       } else if (inst.kind === "splice.3way") {
-        link("t1", "t2"); link("t1", "t3");
+        link("t1", "t2");
+        link("t1", "t3");
       } else if (inst.kind === "connector.weatherpack") {
-        link("a_in", "a_out"); link("b_in", "b_out");
+        link("a_in", "a_out");
+        link("b_in", "b_out");
       } else if (inst.kind === "fuse.blade" || inst.kind === "breaker.circuit") {
         if (c?.kind === "protection" && !c.tripped) link("in", "out");
       } else if (inst.kind === "switch.toggle") {
@@ -104,8 +360,14 @@ export function simulate(
       } else if (inst.kind === "switch.ignition") {
         if (c?.kind === "ignition") {
           if (c.position === "acc") link("bat", "acc");
-          if (c.position === "ign") { link("bat", "acc"); link("bat", "ign"); }
-          if (c.position === "st") { link("bat", "ign"); link("bat", "st"); }
+          if (c.position === "ign") {
+            link("bat", "acc");
+            link("bat", "ign");
+          }
+          if (c.position === "st") {
+            link("bat", "ign");
+            link("bat", "st");
+          }
         }
       } else if (inst.kind === "relay.spdt" || inst.kind === "relay.4pin") {
         if (relayEnergized.has(inst.id)) link("30", "87");
@@ -126,8 +388,7 @@ export function simulate(
     // Evaluate sources and grounds to nets
     for (const inst of project.instances) {
       const c = controls[inst.id] ?? getDefaultControl(inst.kind);
-
-      const checkRoot = (t: string) => find(toKey({instanceId: inst.id, terminalKey: t}));
+      const checkRoot = (t: string) => find(toKey({ instanceId: inst.id, terminalKey: t }));
 
       if (inst.kind === "battery.12v") {
         if (c?.kind === "source" && c.enabled) netHasPower.add(checkRoot("pos"));
@@ -145,8 +406,10 @@ export function simulate(
     const nextEcuEnabled = new Set<string>();
     const nextAltEnabled = new Set<string>();
 
-    const isPowered = (instId: string, t: string) => netHasPower.has(find(toKey({instanceId: instId, terminalKey: t})));
-    const isGrounded = (instId: string, t: string) => netHasGround.has(find(toKey({instanceId: instId, terminalKey: t})));
+    const isPowered = (instId: string, t: string) =>
+      netHasPower.has(find(toKey({ instanceId: instId, terminalKey: t })));
+    const isGrounded = (instId: string, t: string) =>
+      netHasGround.has(find(toKey({ instanceId: instId, terminalKey: t })));
 
     for (const inst of project.instances) {
       const c = controls[inst.id] ?? getDefaultControl(inst.kind);
@@ -156,7 +419,6 @@ export function simulate(
         const g86 = isGrounded(inst.id, "86");
         const p85 = isPowered(inst.id, "85");
         const g85 = isGrounded(inst.id, "85");
-        // High side or Low side
         if ((p86 && g85) || (p85 && g86)) {
           nextRelayEnergized.add(inst.id);
         }
@@ -178,134 +440,42 @@ export function simulate(
     newVParts.sort();
     const vNew = newVParts.join(",");
 
-    if (vNew === V) {
-      // Converged! Finalize results
-      wireStates = {};
-      terminalStates = {};
-      activeComponents = [];
-      shortedComponents = [];
-      backfeedComponents = [];
-      backfeedTerminals = [];
+    const isConverged = vNew === V;
+    const isOscillation = !isConverged && history.has(vNew);
 
-      const netStates = new Map<string, NetState>();
-      for (const root of nets.keys()) {
-        const hp = netHasPower.has(root);
-        const hg = netHasGround.has(root);
-        netStates.set(root, { hasPower: hp, hasGround: hg, isShorted: hp && hg });
-      }
+    const iterResult = computeIterationResult(
+      project,
+      controls,
+      diagnostics,
+      validWires,
+      parent,
+      find,
+      nets,
+      netHasPower,
+      netHasGround,
+      nextRelayEnergized,
+      nextEcuEnabled,
+      nextAltEnabled,
+      isOscillation ? "oscillation" : undefined
+    );
 
-      for (const w of project.wires) {
-        const continuity = diagnostics[w.id]?.continuity;
-        if (continuity === "open" || continuity === "unknown") {
-          wireStates[w.id] = { hasPower: false, hasGround: false, isShorted: false };
-          continue;
-        }
-        const vW = validWires.find(vw => vw.id === w.id);
-        if (vW) {
-          const root = find(toKey(vW.a));
-          wireStates[w.id] = netStates.get(root) || { hasPower: false, hasGround: false, isShorted: false };
-        }
-      }
+    const events = computeEvents(project, safeDiagnostics, iterResult, priorResult, iter);
+    priorResult = iterResult;
 
-      for (const key of Array.from(parent.keys())) {
-        const root = find(key);
-        terminalStates[key] = netStates.get(root) || { hasPower: false, hasGround: false, isShorted: false };
-      }
+    frames.push({
+      tick: iter,
+      result: iterResult,
+      events,
+      converged: isConverged,
+    });
 
-      const termState = (instId: string, tk: string) => terminalStates[`${instId}.${tk}`] || { hasPower: false, hasGround: false, isShorted: false };
-
-      for (const inst of project.instances) {
-        const c = controls[inst.id] ?? getDefaultControl(inst.kind);
-        let active = false;
-        let touchedByShort = false;
-        let isBackfeed = false;
-
-        const ts = Object.keys(terminalStates).filter(k => k.startsWith(`${inst.id}.`));
-        for (const k of ts) {
-          if (terminalStates[k].isShorted) touchedByShort = true;
-        }
-
-        if (inst.kind === "lamp.incandescent" || inst.kind === "pump.fuel" || inst.kind === "fan.electric" || inst.kind === "horn.dual") {
-          const si = termState(inst.id, "in");
-          const sg = termState(inst.id, "ground");
-          if (si.hasPower && !si.isShorted && sg.hasGround && !sg.isShorted) active = true;
-        } else if (inst.kind === "flasher.2pin") {
-          const sx = termState(inst.id, "x");
-
-          // Flasher is active when receiving power and grounded through a load, but we don't strictly require ground direct connection
-          // For simplicity, it's active if x has power.
-          if (sx.hasPower && !sx.isShorted) active = true;
-        } else if (inst.kind === "gauge.voltmeter") {
-          const si = termState(inst.id, "sense");
-          const sg = termState(inst.id, "ground");
-          if (si.hasPower && !si.isShorted && sg.hasGround && !sg.isShorted) active = true;
-        } else if (inst.kind === "motor.starter") {
-          const st = termState(inst.id, "st");
-          const bat = termState(inst.id, "bat");
-          const sg = termState(inst.id, "ground");
-          if (st.hasPower && !st.isShorted && bat.hasPower && !bat.isShorted && sg.hasGround && !sg.isShorted) active = true;
-        } else if (inst.kind === "relay.spdt" || inst.kind === "relay.4pin") {
-          if (nextRelayEnergized.has(inst.id)) active = true;
-          // Backfeed check for relays (87/87a receiving power when not routed to 30)
-          // ONLY if 30 doesn't also have power (which would make it a normal passthrough)
-          const s30 = termState(inst.id, "30");
-          const s87 = termState(inst.id, "87");
-          const s87a = termState(inst.id, "87a");
-
-          if (active) {
-            // routed to 87
-            if (s87a.hasPower && !s30.hasPower) { isBackfeed = true; backfeedTerminals.push(`${inst.id}.87a`); }
-          } else {
-            // routed to 87a (for SPDT), or open for 4pin
-            if (inst.kind === "relay.spdt") {
-              if (s87.hasPower && !s30.hasPower) { isBackfeed = true; backfeedTerminals.push(`${inst.id}.87`); }
-            } else {
-              // 4pin
-              if (s87.hasPower) { isBackfeed = true; backfeedTerminals.push(`${inst.id}.87`); }
-            }
-          }
-        } else if (inst.kind === "ecu.trigger") {
-          if (nextEcuEnabled.has(inst.id)) active = true;
-          // Backfeed check: receiving power when not enabled
-          if (!active) {
-            if (termState(inst.id, "trigger").hasPower) {
-              isBackfeed = true; backfeedTerminals.push(`${inst.id}.trigger`);
-            }
-          }
-        } else if (inst.kind === "alternator.12v") {
-          if (nextAltEnabled.has(inst.id)) active = true;
-          if (!active && termState(inst.id, "b_plus").hasPower) {
-             isBackfeed = true; backfeedTerminals.push(`${inst.id}.b_plus`);
-          }
-        } else if (inst.kind === "battery.12v") {
-          if (c?.kind === "source" && c.enabled) active = true;
-          if (!active && termState(inst.id, "pos").hasPower) {
-            isBackfeed = true; backfeedTerminals.push(`${inst.id}.pos`);
-          }
-        } else if (inst.kind === "switch.toggle") {
-          if (c?.kind === "toggle" && !c.closed && termState(inst.id, "out").hasPower) {
-             isBackfeed = true; backfeedTerminals.push(`${inst.id}.out`);
-          }
-        } else if (inst.kind === "switch.spdt") {
-          if (c?.kind === "spdt" && c.position === "low" && termState(inst.id, "high").hasPower) {
-             isBackfeed = true; backfeedTerminals.push(`${inst.id}.high`);
-          } else if (c?.kind === "spdt" && c.position === "high" && termState(inst.id, "low").hasPower) {
-             isBackfeed = true; backfeedTerminals.push(`${inst.id}.low`);
-          }
-        }
-
-        if (active) activeComponents.push(inst.id);
-        if (touchedByShort) shortedComponents.push(inst.id);
-        if (isBackfeed) backfeedComponents.push(inst.id);
-      }
-
-      return {
-        wireStates, terminalStates, activeComponents, shortedComponents, backfeedComponents, backfeedTerminals
-      };
+    if (isConverged) {
+      finalResult = iterResult;
+      break;
     }
 
-    if (history.has(vNew)) {
-      error = "oscillation";
+    if (isOscillation) {
+      finalResult = iterResult;
       break;
     }
 
@@ -313,7 +483,30 @@ export function simulate(
     V = vNew;
   }
 
+  if (!finalResult) {
+    finalResult = frames[frames.length - 1]?.result || {
+      wireStates: {},
+      terminalStates: {},
+      activeComponents: [],
+      shortedComponents: [],
+      backfeedComponents: [],
+      backfeedTerminals: [],
+      error: "oscillation",
+    };
+  }
+
   return {
-    wireStates, terminalStates, activeComponents, shortedComponents, backfeedComponents, backfeedTerminals, error: error || "oscillation"
+    final: finalResult,
+    frames,
+    converged: finalResult.error !== "oscillation",
   };
 }
+
+export function simulate(
+  project: ProjectDocument,
+  controls: SimulationState = {},
+  diagnostics: WireDiagnostics = {}
+): SimulationResult {
+  return simulateWithTrace(project, controls, diagnostics).final;
+}
+

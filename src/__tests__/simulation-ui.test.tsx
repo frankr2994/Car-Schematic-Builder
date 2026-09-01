@@ -15,7 +15,8 @@ describe("Inspector Simulation UI", () => {
       wires: [],
       assemblies: [],
       circuits: [],
-      layoutOverrides: {}
+      layoutOverrides: {},
+      annotations: []
     };
 
     const handleChange = vi.fn();
@@ -50,7 +51,8 @@ describe("Inspector Simulation UI", () => {
       wires: [],
       assemblies: [],
       circuits: [],
-      layoutOverrides: {}
+      layoutOverrides: {},
+      annotations: []
     };
 
     render(

@@ -24,7 +24,8 @@ describe("Simulation Verification", () => {
       ],
       assemblies: [],
       circuits: [],
-      layoutOverrides: {}
+      layoutOverrides: {},
+      annotations: []
     };
 
     // 1. Switch Open -> Load De-energized
@@ -86,7 +87,8 @@ describe("Simulation Verification", () => {
       ],
       assemblies: [],
       circuits: [],
-      layoutOverrides: {}
+      layoutOverrides: {},
+      annotations: []
     };
 
     const res = simulate(project, {}, {});
@@ -114,7 +116,8 @@ describe("Simulation Verification", () => {
       ],
       assemblies: [],
       circuits: [],
-      layoutOverrides: {}
+      layoutOverrides: {},
+      annotations: []
     };
 
     let res = simulate(project, {

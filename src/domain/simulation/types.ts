@@ -22,3 +22,44 @@ export interface SimulationResult {
   backfeedTerminals: string[];
   error?: "oscillation";
 }
+
+export type SimulationEventType =
+  | "net-energized"
+  | "relay-changed"
+  | "component-active"
+  | "fault-open"
+  | "short-detected"
+  | "backfeed-detected"
+  | "oscillation";
+
+export interface SimulationEvent {
+  type: SimulationEventType;
+  target: { kind: "component" | "wire" | "terminal"; id: string };
+  description?: string;
+}
+
+export interface SimulationFrame {
+  tick: number;
+  result: SimulationResult;
+  events: SimulationEvent[];
+  converged: boolean;
+}
+
+export interface SimulationTraceResult {
+  final: SimulationResult;
+  frames: SimulationFrame[];
+  converged: boolean;
+}
+
+export interface SimulationRun {
+  id: string;
+  projectId?: string;
+  timestamp: string;
+  controlsSnapshot: SimulationState;
+  diagnosticsSnapshot?: Record<string, unknown>;
+  frames: SimulationFrame[];
+  final: SimulationResult;
+  converged: boolean;
+  status: "completed" | "oscillating" | "running";
+}
+
