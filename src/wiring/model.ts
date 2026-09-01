@@ -40,12 +40,13 @@ export interface AssemblyNodeData extends Record<string, unknown> {
 
 export interface WiringNodeViewModel {
   id: string;
-  type: "component" | "assembly";
+  type: "component" | "assembly" | "annotation";
   position: { x: number; y: number };
   width?: number;
   height?: number;
-  data: WiringNodeData | AssemblyNodeData;
+  data: WiringNodeData | AssemblyNodeData | Record<string, unknown>;
   selected?: boolean;
+  draggable?: boolean;
   style?: React.CSSProperties;
 }
 
