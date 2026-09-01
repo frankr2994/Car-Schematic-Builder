@@ -9,6 +9,8 @@ export interface QuickAddProps {
   onAddComponent: (kind: string) => void;
   onInsertRecipe: (recipe: CircuitRecipe) => void;
   onInsertTemplate: (template: CircuitTemplate) => void;
+  projectId?: string;
+  projectTemplates?: CircuitTemplate[];
 }
 
 type QuickAddItem =
@@ -22,6 +24,8 @@ export const QuickAdd: React.FC<QuickAddProps> = ({
   onAddComponent,
   onInsertRecipe,
   onInsertTemplate,
+  projectId,
+  projectTemplates,
 }) => {
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedIndex, setSelectedIndex] = useState(0);
@@ -30,17 +34,18 @@ export const QuickAdd: React.FC<QuickAddProps> = ({
   const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    if (isOpen && apiTemplates.length === 0) {
-      fetch('/api/templates')
-        .then(res => res.json())
-        .then(data => {
-           if (data && Array.isArray(data.templates)) {
-              setApiTemplates(data.templates);
-           }
+    if (isOpen) {
+      const url = projectId ? `/api/templates?projectId=${encodeURIComponent(projectId)}` : "/api/templates";
+      fetch(url)
+        .then((res) => res.json())
+        .then((data) => {
+          if (data && Array.isArray(data.templates)) {
+            setApiTemplates(data.templates);
+          }
         })
-        .catch(err => console.error("Failed to fetch templates", err));
+        .catch((err) => console.error("Failed to fetch templates", err));
     }
-  }, [isOpen, apiTemplates.length]);
+  }, [isOpen, projectId]);
 
   // Focus input when opened
   useEffect(() => {
@@ -52,12 +57,15 @@ export const QuickAdd: React.FC<QuickAddProps> = ({
     }
   }, [isOpen]);
 
-
   const allItems = useMemo<QuickAddItem[]>(() => {
     const list: QuickAddItem[] = [];
 
-    // Add templates
-    apiTemplates.forEach((template) => {
+    // Add merged templates (static catalog templates + project-scoped templates + API templates)
+    const templateMap = new Map<string, CircuitTemplate>();
+    (projectTemplates || []).forEach((t) => templateMap.set(t.id, t));
+    apiTemplates.forEach((t) => templateMap.set(t.id, t));
+
+    Array.from(templateMap.values()).forEach((template) => {
       list.push({
         type: "template",
         item: template,
@@ -93,7 +101,7 @@ export const QuickAdd: React.FC<QuickAddProps> = ({
     });
 
     return list;
-  }, [apiTemplates]);
+  }, [apiTemplates, projectTemplates]);
 
   const filteredItems = useMemo(() => {
     const term = searchTerm.toLowerCase().trim();
@@ -220,6 +228,7 @@ export const QuickAdd: React.FC<QuickAddProps> = ({
             filteredItems.map((item, index) => {
               const isSelected = index === selectedIndex;
               const isRecipe = item.type === "recipe";
+              const isTemplate = item.type === "template";
 
               return (
                 <div
@@ -235,7 +244,11 @@ export const QuickAdd: React.FC<QuickAddProps> = ({
                       <span className="font-bold text-xs">{item.title}</span>
                       <span
                         className={`text-[9px] font-bold uppercase px-1.5 py-0.2 border ${
-                          isRecipe
+                          isTemplate
+                            ? isSelected
+                              ? "bg-purple-400 text-black border-purple-400"
+                              : "bg-purple-100 text-purple-900 border-purple-300"
+                            : isRecipe
                             ? isSelected
                               ? "bg-amber-400 text-black border-amber-400"
                               : "bg-amber-100 text-amber-900 border-amber-300"
@@ -244,7 +257,7 @@ export const QuickAdd: React.FC<QuickAddProps> = ({
                             : "bg-gray-100 text-gray-600 border-gray-300"
                         }`}
                       >
-                        {isRecipe ? "⚡ Recipe" : item.category}
+                        {isTemplate ? "📦 Template" : isRecipe ? "⚡ Recipe" : item.category}
                       </span>
                     </div>
                     <p
@@ -255,8 +268,27 @@ export const QuickAdd: React.FC<QuickAddProps> = ({
                       {item.subtitle}
                     </p>
                   </div>
-                  <div className="text-[10px] font-bold uppercase shrink-0 pt-0.5">
-                    {isSelected ? "Press ↵" : ""}
+                  <div className="flex items-center gap-1.5 shrink-0 pt-0.5">
+                    {isTemplate && (
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleSelect(item);
+                        }}
+                        className={`px-2 py-0.5 text-[9px] font-bold uppercase border transition-colors ${
+                          isSelected
+                            ? "bg-white text-black border-white hover:bg-gray-200"
+                            : "bg-purple-700 text-white border-purple-800 hover:bg-purple-800"
+                        }`}
+                        aria-label="Use Template"
+                      >
+                        Use Template
+                      </button>
+                    )}
+                    <span className="text-[10px] font-bold uppercase">
+                      {isSelected ? "↵" : ""}
+                    </span>
                   </div>
                 </div>
               );

@@ -14,6 +14,7 @@ const emptyProject: ProjectDocument = {
   assemblies: [],
   circuits: [],
   layoutOverrides: {},
+  annotations: [],
 };
 
 describe("Circuit Recipes & Smart Insertion", () => {

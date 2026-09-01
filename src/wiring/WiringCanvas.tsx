@@ -13,6 +13,7 @@ import {
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import ComponentNode from "./ComponentNode";
+import AnnotationNode from "./AnnotationNode";
 import DiagnosticEdge from "./DiagnosticEdge";
 import "./wiring.css";
 
@@ -58,6 +59,7 @@ export const WiringCanvas: React.FC<WiringCanvasProps> = ({
   const nodeTypes = useMemo(
     () => ({
       component: ComponentNode,
+      annotation: AnnotationNode,
     }),
     []
   );

@@ -29,7 +29,10 @@ import {
   deleteWire,
   deleteInstance,
   addInstance,
+  updateAnnotation,
+  deleteAnnotation,
 } from "../domain/projectCommands";
+import { Annotation } from "../domain/types";
 import { WiringCanvas } from "./WiringCanvas";
 import "./wiring.css";
 
@@ -137,6 +140,38 @@ function FlowController({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [topologyKey, fitView]);
 
+  const handleSelectAnnotation = useCallback(
+    (id: string) => {
+      setSelection({ kind: "annotation", id });
+    },
+    [setSelection]
+  );
+
+  const handleUpdateAnnotation = useCallback(
+    (id: string, patch: Partial<Omit<Annotation, "id">>) => {
+      if (!project || readOnly) return;
+      const res = updateAnnotation(project, id, patch);
+      if (res.ok) {
+        onProjectChange(res.project);
+      }
+    },
+    [project, onProjectChange, readOnly]
+  );
+
+  const handleDeleteAnnotation = useCallback(
+    (id: string) => {
+      if (!project || readOnly) return;
+      const res = deleteAnnotation(project, id);
+      if (res.ok) {
+        onProjectChange(res.project);
+        if (currentSelection?.kind === "annotation" && currentSelection.id === id) {
+          setSelection(null);
+        }
+      }
+    },
+    [project, onProjectChange, readOnly, currentSelection, setSelection]
+  );
+
   // Derive base view model from project, layoutResult, diagnostics, readOnly status, and focusCircuit
   const viewModel = useMemo(() => {
     if (!project) return { nodes: [], edges: [] };
@@ -146,37 +181,77 @@ function FlowController({
       currentDiagnostics,
       readOnly ? undefined : handleToggleDiagnostic,
       focusCircuit,
-      simulationResult
+      simulationResult,
+      readOnly
+        ? undefined
+        : {
+            onSelect: handleSelectAnnotation,
+            onSelectTarget: (sel: WorkspaceSelection) => setSelection(sel),
+            onUpdate: handleUpdateAnnotation,
+            onDelete: handleDeleteAnnotation,
+          }
     );
-  }, [project, layoutResult, currentDiagnostics, readOnly, handleToggleDiagnostic, focusCircuit, simulationResult]);
+  }, [
+    project,
+    layoutResult,
+    currentDiagnostics,
+    readOnly,
+    handleToggleDiagnostic,
+    focusCircuit,
+    simulationResult,
+    handleSelectAnnotation,
+    setSelection,
+    handleUpdateAnnotation,
+    handleDeleteAnnotation,
+  ]);
 
 
   // Apply transient drag positions and selection states to rendered nodes
   const renderedNodes = useMemo(() => {
+    let targetedComponentId: string | null = null;
+    if (currentSelection?.kind === "annotation") {
+      const ann = project?.annotations?.find((a) => a.id === currentSelection.id);
+      if (ann?.anchor.kind === "component" || ann?.anchor.kind === "terminal") {
+        targetedComponentId = ann.anchor.componentId;
+      }
+    }
+
     return viewModel.nodes.map((node) => {
       const ui = nodeUIState[node.id];
       const isSelected =
-        currentSelection?.kind === "component" && currentSelection.id === node.id;
+        (currentSelection?.kind === "component" && currentSelection.id === node.id) ||
+        (currentSelection?.kind === "annotation" && currentSelection.id === node.id);
+
+      const isTargeted = targetedComponentId === node.id;
 
       return {
         ...node,
         position: ui?.position ?? node.position,
-        selected: isSelected || (ui?.selected ?? false),
+        selected: isSelected || (ui?.selected ?? false) || isTargeted,
       };
     });
-  }, [viewModel.nodes, nodeUIState, currentSelection]);
+  }, [viewModel.nodes, nodeUIState, currentSelection, project?.annotations]);
 
   // Apply selection states to edges
   const renderedEdges = useMemo(() => {
+    let targetedWireId: string | null = null;
+    if (currentSelection?.kind === "annotation") {
+      const ann = project?.annotations?.find((a) => a.id === currentSelection.id);
+      if (ann?.anchor.kind === "wire") {
+        targetedWireId = ann.anchor.wireId;
+      }
+    }
+
     return viewModel.edges.map((edge) => {
       const isSelected =
-        currentSelection?.kind === "wire" && currentSelection.id === edge.id;
+        (currentSelection?.kind === "wire" && currentSelection.id === edge.id) ||
+        targetedWireId === edge.id;
       return {
         ...edge,
         selected: isSelected,
       };
     });
-  }, [viewModel.edges, currentSelection]);
+  }, [viewModel.edges, currentSelection, project?.annotations]);
 
   // Handle all node changes (both transient dragging and selection toggling)
   const onNodesChange = useCallback((changes: NodeChange[]) => {
@@ -187,6 +262,21 @@ function FlowController({
     (_: React.MouseEvent | MouseEvent | TouchEvent, node: Node) => {
       if (readOnly) return;
       setNodeUIState((prev) => applyNodeDragStop(prev, node.id));
+
+      const isAnnotation = project.annotations?.some((a) => a.id === node.id);
+      if (isAnnotation) {
+        const annotation = project.annotations?.find((a) => a.id === node.id);
+        if (annotation && annotation.anchor.kind === "canvas") {
+          const res = updateAnnotation(project, node.id, {
+            anchor: { kind: "canvas", x: node.position.x, y: node.position.y },
+          });
+          if (res.ok) {
+            onProjectChange(res.project);
+          }
+        }
+        return;
+      }
+
       onProjectChange(createLayoutOverride(project, node.id, node.position));
     },
     [project, onProjectChange, readOnly]
@@ -275,9 +365,16 @@ function FlowController({
       if (readOnly || !project || nodesToDelete.length === 0) return;
       let currentProj = project;
       for (const node of nodesToDelete) {
-        const res = deleteInstance(currentProj, node.id);
-        if (res.ok) {
-          currentProj = res.project;
+        if (node.type === "annotation") {
+          const res = deleteAnnotation(currentProj, node.id);
+          if (res.ok) {
+            currentProj = res.project;
+          }
+        } else {
+          const res = deleteInstance(currentProj, node.id);
+          if (res.ok) {
+            currentProj = res.project;
+          }
         }
       }
       onProjectChange(currentProj);
@@ -338,7 +435,11 @@ function FlowController({
   // Selection handlers
   const onNodeClick = useCallback(
     (_: React.MouseEvent, node: Node) => {
-      setSelection({ kind: "component", id: node.id });
+      if (node.type === "annotation") {
+        setSelection({ kind: "annotation", id: node.id });
+      } else {
+        setSelection({ kind: "component", id: node.id });
+      }
     },
     [setSelection]
   );

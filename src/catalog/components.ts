@@ -326,19 +326,22 @@ export const catalog: Record<string, ComponentDefinition> = {
   }
 };
 
-export interface CircuitTemplate {
-  id: string;
-  name: string;
-  intent: string;
-  components: { role: string; kind: string; zone: string }[];
-  connections: { fromRole: string; toRole: string }[];
-}
+import type {
+  CircuitTemplate,
+  CircuitTemplateComponent,
+  CircuitTemplateConnection,
+} from "../domain/types";
+
+export type { CircuitTemplate, CircuitTemplateComponent, CircuitTemplateConnection };
 
 export const templates: CircuitTemplate[] = [
   {
     id: "simple_light",
     name: "Simple Switched Light",
     intent: "Provide a manually switched light circuit",
+    category: "Lighting",
+    description: "Basic fused toggle switch feeding an incandescent lamp with dedicated chassis ground return.",
+    tags: ["light", "switch", "basic", "fuse"],
     components: [
       { role: "battery", kind: "battery.12v", zone: "Engine Bay" },
       { role: "fuse", kind: "fuse.blade", zone: "Dash" },
@@ -352,12 +355,22 @@ export const templates: CircuitTemplate[] = [
       { fromRole: "switch.out", toRole: "lamp.in" },
       { fromRole: "lamp.ground", toRole: "ground.gnd" },
       { fromRole: "battery.neg", toRole: "ground.gnd" }
-    ]
+    ],
+    relativePositions: {
+      battery: { x: 50, y: 150 },
+      fuse: { x: 250, y: 150 },
+      switch: { x: 450, y: 150 },
+      lamp: { x: 650, y: 150 },
+      ground: { x: 850, y: 150 }
+    }
   },
   {
     id: "relay_headlight",
     name: "Relay-Controlled Headlight",
     intent: "High-current headlight circuit controlled by a dashboard switch through an SPDT relay",
+    category: "Lighting",
+    description: "Standard automotive high-draw headlight circuit with relay isolation protecting dash toggle switches.",
+    tags: ["headlight", "relay", "lighting", "high-current"],
     components: [
       { role: "battery", kind: "battery.12v", zone: "Engine Bay" },
       { role: "fuse_main", kind: "fuse.blade", zone: "Engine Bay" },
@@ -375,7 +388,85 @@ export const templates: CircuitTemplate[] = [
       { fromRole: "relay_headlamp.85", toRole: "ground_front.gnd" },
       { fromRole: "headlight.ground", toRole: "ground_front.gnd" },
       { fromRole: "battery.neg", toRole: "ground_front.gnd" }
-    ]
+    ],
+    relativePositions: {
+      battery: { x: 50, y: 100 },
+      fuse_main: { x: 250, y: 100 },
+      switch_dash: { x: 450, y: 50 },
+      relay_headlamp: { x: 450, y: 200 },
+      headlight: { x: 680, y: 200 },
+      ground_front: { x: 880, y: 150 }
+    }
+  },
+  {
+    id: "fan_relay_ecu",
+    name: "ECU-Controlled Electric Cooling Fan",
+    intent: "Electric cooling fan circuit triggered by low-side ECU ground signal through 4-pin relay",
+    category: "Engine & Cooling",
+    description: "Thermostatic or ECU low-side switched cooling fan circuit with circuit breaker protection.",
+    tags: ["fan", "ecu", "relay", "cooling", "breaker"],
+    components: [
+      { role: "battery", kind: "battery.12v", zone: "Engine Bay" },
+      { role: "breaker", kind: "breaker.circuit", zone: "Engine Bay" },
+      { role: "ecu", kind: "ecu.trigger", zone: "Cabin" },
+      { role: "relay_fan", kind: "relay.4pin", zone: "Engine Bay" },
+      { role: "fan", kind: "fan.electric", zone: "Engine Bay" },
+      { role: "ground_bay", kind: "ground.chassis", zone: "Engine Bay" }
+    ],
+    connections: [
+      { fromRole: "battery.pos", toRole: "breaker.in" },
+      { fromRole: "breaker.out", toRole: "relay_fan.30" },
+      { fromRole: "breaker.out", toRole: "ecu.12v" },
+      { fromRole: "ecu.trigger", toRole: "relay_fan.86" },
+      { fromRole: "relay_fan.87", toRole: "fan.in" },
+      { fromRole: "relay_fan.85", toRole: "ground_bay.gnd" },
+      { fromRole: "fan.ground", toRole: "ground_bay.gnd" },
+      { fromRole: "ecu.ground", toRole: "ground_bay.gnd" },
+      { fromRole: "battery.neg", toRole: "ground_bay.gnd" }
+    ],
+    relativePositions: {
+      battery: { x: 50, y: 120 },
+      breaker: { x: 250, y: 120 },
+      ecu: { x: 450, y: 40 },
+      relay_fan: { x: 450, y: 220 },
+      fan: { x: 680, y: 220 },
+      ground_bay: { x: 880, y: 150 }
+    }
+  },
+  {
+    id: "fuel_pump_ignition",
+    name: "Ignition-Switched High Flow Fuel Pump",
+    intent: "Fuel pump power feed activated by ignition switch through relay with blade fuse protection",
+    category: "Fuel & Ignition",
+    description: "Automotive high-pressure electric fuel pump system with ignition switch control and relay isolation.",
+    tags: ["fuel", "pump", "ignition", "relay", "fuse"],
+    components: [
+      { role: "battery", kind: "battery.12v", zone: "Engine Bay" },
+      { role: "fuse_main", kind: "fuse.blade", zone: "Engine Bay" },
+      { role: "ignition_sw", kind: "switch.ignition", zone: "Dash" },
+      { role: "relay_fuel", kind: "relay.spdt", zone: "Engine Bay" },
+      { role: "pump", kind: "pump.fuel", zone: "Rear" },
+      { role: "ground_rear", kind: "ground.chassis", zone: "Rear" }
+    ],
+    connections: [
+      { fromRole: "battery.pos", toRole: "fuse_main.in" },
+      { fromRole: "fuse_main.out", toRole: "ignition_sw.bat" },
+      { fromRole: "fuse_main.out", toRole: "relay_fuel.30" },
+      { fromRole: "ignition_sw.ign", toRole: "relay_fuel.86" },
+      { fromRole: "relay_fuel.87", toRole: "pump.in" },
+      { fromRole: "relay_fuel.85", toRole: "ground_rear.gnd" },
+      { fromRole: "pump.ground", toRole: "ground_rear.gnd" },
+      { fromRole: "battery.neg", toRole: "ground_rear.gnd" }
+    ],
+    relativePositions: {
+      battery: { x: 50, y: 120 },
+      fuse_main: { x: 250, y: 120 },
+      ignition_sw: { x: 450, y: 50 },
+      relay_fuel: { x: 450, y: 220 },
+      pump: { x: 680, y: 220 },
+      ground_rear: { x: 880, y: 150 }
+    }
   }
 ];
+
 
